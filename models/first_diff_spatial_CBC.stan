@@ -193,6 +193,8 @@ for(t in 1:(n_years_m1)){
  generated quantities {
 
    array[nstrata,nyears] real<lower=0> n; //full annual indices
+   array[nstrata,nyears] real<lower=0> n_alt; //alternate annual indices
+  
   // vector[ncounts] log_lik; // alternative value to track the observervation level log-likelihood
   // potentially useful for estimating loo-diagnostics, such as looic
   
@@ -219,7 +221,13 @@ for(y in 1:nyears){
         //using the mean of hte exponentiated values, instead of including the log-normal
         // retransformation factor (0.5*sdste^2), because this retransformation makes 2 questionable assumptions:
           // 1 - assumes that sites are exchangeable among strata - e.g., that sdste is equal among all strata
-          // 2 - assumes that the distribution of site-effects is normal
+          // 2 - assumes that the distribution of site-effects is normal, and therefore that half of the
+          // variance of the site-effects is a reasonable retransformation factor from a log-normal
+          // to a normal.
+        
+        // alternate index that makes the above two assumptions and uses half variance log-normal 
+        // retransformation factor.
+        n_alt[s,y] = exp(strata + yeareffect[s,y] + 0.5*(sdste*sdste))* nonzeroweight[s];
 
 
 
