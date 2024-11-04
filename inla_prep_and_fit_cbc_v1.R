@@ -152,3 +152,51 @@ inla_dat %>% slice(pred_idxs) %>%
 inla_fit1$waic$waic
 inla_fit2$waic$waic
 # ------------------------------------------------------------------------------
+
+
+
+
+# some gams --------------------------------------------------------------------
+library(mgcv)
+library(gratia)
+
+# data
+d1 <- real_dat %>% 
+  mutate(hours=exp(log_hrs), 
+         site_idx1=factor(site_idx1),
+         strat_idx1=factor(strat_idx1),
+         strat_yr_idx1=factor(as.numeric(factor(paste(strat_idx1, year_idx1, sep="_")))))
+head(d1)
+ggplot(d1) + geom_smooth(aes(x=hours, y=count)) + facet_wrap(~strat_idx1)
+
+# model
+m1 <- bam(count ~ 1 + 
+      s(site_idx1, bs="re") + 
+      s(strat_idx1, bs="re") +
+      #s(strat_yr_idx1, bs="re") + 
+      s(hours, strat_idx1, bs = 'fs') +
+      s(year_idx1, strat_idx1, bs = 'fs'),
+    data=d1, family="nb", method="fREML", nthreads=4)
+
+# results
+summary(m1)
+draw(m1)
+plot(m1)
+appraise(m1)
+new_data <- expand.grid(strat_idx1=sort(unique(d1$strat_idx1)), 
+              hours=seq(min(d1$hours), max(d1$hours), length.out=100)) %>%
+  mutate(site_idx1="1", strat_yr_idx1="1", year_idx1=mean(d1$year_idx1)) %>% 
+  arrange(strat_idx1, hours)
+sapply(m1$smooth, "[[",  "label")
+m1_pred <- bind_cols(new_data,
+                     as.data.frame(predict(m1, newdata = new_data, 
+                                           type="response",
+                                           exclude=c("s(site_idx1)"),
+                                           se.fit = TRUE))) %>% 
+  left_join(strata_map %>% rename(strat_idx1=strata_vec) %>% 
+              mutate(strat_idx1=factor(strat_idx1)))
+ggplot(m1_pred, aes(x = hours, y = fit)) +
+  geom_line() +
+  facet_wrap(~ strata_name)
+# ------------------------------------------------------------------------------
+
