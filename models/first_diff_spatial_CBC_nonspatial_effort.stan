@@ -150,20 +150,20 @@ model {
   sdstrata ~ student_t(3,0,1); //prior on sd of intercept variation
 
   // spatially varying effort effect
-  b_raw ~ icar_normal(nstrata, node1, node2);//effort slopes by stratum
+  // b_raw ~ icar_normal(nstrata, node1, node2);//effort slopes by stratum
   
   // optional simple random effort effect
-  // b_raw ~ std_normal();//effort slopes by stratum
-  // sum(b_raw) ~ normal(0,0.001*nstrata);
+  b_raw ~ std_normal();//effort slopes by stratum
+  sum(b_raw) ~ normal(0,0.001*nstrata);
   
   sdb ~ normal(0,0.5); //prior on scale of effort slopes
   
   // spatially varying effort effect
-  p_raw ~ icar_normal(nstrata, node1, node2);//effort slopes by stratum
+  // p_raw ~ icar_normal(nstrata, node1, node2);//effort slopes by stratum
   
   // optional simple random effort effect
-  // p_raw ~ std_normal();//effort exponents by stratum
-  // sum(p_raw) ~ normal(0,0.001*nstrata);
+  p_raw ~ std_normal();//effort exponents by stratum
+  sum(p_raw) ~ normal(0,0.001*nstrata);
   sdp ~ normal(0,0.5); //prior on scale of effort exponents
   
   P ~ std_normal();//effort mean exponent
