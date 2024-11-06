@@ -26,6 +26,7 @@ stratification <- "bbs_usgs"
 models <- model <- "first_diff"
 model_variants <- model_variant <- "spatial"
 data_sets <- data_set <- "cbc"
+setwd("C:/Users/tmeehan/Documents/GitHub/CBC_Spatial_Modeling")
 # ------------------------------------------------------------------------------
 
 
