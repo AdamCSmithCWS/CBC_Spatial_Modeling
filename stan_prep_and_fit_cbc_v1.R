@@ -3,7 +3,7 @@ library(tidyverse)
 library(bbsBayes2)
 library(cmdstanr)
 library(patchwork)
-setwd("C:/Users/tmeehan/Documents/Github/CBC_Spatial_Modeling")
+#setwd("C:/Users/tmeehan/Documents/Github/CBC_Spatial_Modeling")
 # ------------------------------------------------------------------------------
 
 
@@ -73,6 +73,8 @@ data_prep <- data_1 %>%
             by = c("strata_name")) %>% 
   mutate(circle_vec = as.integer(factor(circle)),
          year_vec = count_year - (min(count_year)-1))
+
+saveRDS(data_prep,paste0("data/data_prep_",species,".rds"))
 # ------------------------------------------------------------------------------
 
 
@@ -164,11 +166,20 @@ stan_data[["nIy1"]] <- length(stan_data[["Iy1"]])
 stan_data[["Iy2"]] <- c((stan_data$fixed_year+1):stan_data$nyears)
 stan_data[["nIy2"]] <- length(stan_data[["Iy2"]])
 
+
+# Add additional effort visualisation variables ---------------------------
+stan_data[["n_effort_preds"]] <- 100
+stan_data[["effort_preds"]] <- c(seq(from = min(stan_data$hours), 
+                                     to = max(stan_data$hours),
+                                     length.out = 100))
+
 # get model file
-mod.file <- "models/first_diff_spatial_CBC.stan"
+#mod.file <- "models/first_diff_spatial_CBC_nonspatial_effort.stan"
+
+ mod.file <- "models/first_diff_spatial_CBC.stan"
 
 # compile model
-set_cmdstan_path(path = "D:/Users/tmeehan/Documents/.cmdstan/cmdstan-2.35.0")
+#set_cmdstan_path(path = "D:/Users/tmeehan/Documents/.cmdstan/cmdstan-2.35.0")
 model <- cmdstan_model(mod.file, stanc_options = list("Oexperimental"))
 # ------------------------------------------------------------------------------
 
@@ -209,6 +220,16 @@ stanfit <- model$sample(
   show_exceptions = FALSE)
 
 # save cmdstan objects
-stanfit$save_object("output/fit_CBC_spatial_first_diff.rds")
-saveRDS(stan_data, "output/datalist_CBC_spatial_first_diff.rds")
+# 
+# 
+# stanfit$save_object(paste0("output/fit_",species,"_CBC_spatial_first_diff_nonspat_eff.rds"))
+# saveRDS(stan_data, paste0("output/datalist_",species,"_CBC_spatial_first_diff_nonspat_eff.rds"))
+# saveRDS(summ, paste0("output/parameter_summary_",species,"_CBC_spatial_first_diff.rds"))
+
+summ <- stanfit$summary()
+
+
+stanfit$save_object(paste0("output/fit_",species,"_CBC_spatial_first_diff.rds"))
+saveRDS(stan_data, paste0("output/datalist_",species,"_CBC_spatial_first_diff.rds"))
+saveRDS(summ, paste0("output/parameter_summary_",species,"_CBC_spatial_first_diff.rds"))
 # ------------------------------------------------------------------------------

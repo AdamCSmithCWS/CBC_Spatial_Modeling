@@ -24,7 +24,9 @@ data {
   int<lower=1> ncounts;
   int<lower=1> nyears;
   int<lower=1> fixed_year; //middle year of the time-series scaled to ~(n_years/2)
-
+  int<lower=1> n_effort_preds; // number of effort predictions
+  array[n_effort_preds] real effort_preds; // of effort to scale predictions
+  
   array[ncounts] int<lower=0> count;              // count observations
   array[ncounts] int<lower=1> strat;               // strata indicators
   array[ncounts] int<lower=1> year; // year index
@@ -131,7 +133,7 @@ transformed parameters {
     real p = sdp * p_raw[strat[i]] + P;  //effort coefficient for stratum i
     real effort_effect = (b*((hours[i]^p)-1))/p; //effort correction for count i
     
-    E[i] =  strata + yeareffect[strat[i],year[i]] + ste;
+    E[i] =  strata + yeareffect[strat[i],year[i]] + ste + effort_effect;
   }
   
   }
@@ -194,7 +196,9 @@ for(t in 1:(n_years_m1)){
 
    array[nstrata,nyears] real<lower=0> n; //full annual indices
    array[nstrata,nyears] real<lower=0> n_alt; //alternate annual indices
-  
+   array[nstrata,n_effort_preds] real effort_strata; //effort correction for count i
+   array[n_effort_preds] real EFFORT; //effort correction for count i
+   
   // vector[ncounts] log_lik; // alternative value to track the observervation level log-likelihood
   // potentially useful for estimating loo-diagnostics, such as looic
   
@@ -202,6 +206,17 @@ for(t in 1:(n_years_m1)){
   // log_lik[i] = neg_binomial_2_log(count[i] | E[i],phi);
   // }
   
+  for(s in 1:nstrata){
+    
+    real b = sdb * b_raw[s] + B;  // effort slope for stratum i
+    real p = sdp * p_raw[s] + P;  //effort coefficient for stratum i
+    for(i in 1:n_effort_preds){
+    effort_strata[s,i] = (b*((effort_preds[i]^p)-1))/p; //effort correction for count i
+    }
+  }
+  for(i in 1:n_effort_preds){
+    EFFORT[i] = (B*((effort_preds[i]^P)-1))/P; //effort correction for count i
+    }
   
 for(y in 1:nyears){
 

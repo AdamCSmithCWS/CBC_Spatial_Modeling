@@ -22,6 +22,8 @@ source("functions/posterior_summary_functions.R")
 source("functions/map_trends.R")
 
 species <- "American Dipper"
+species_l <- "Cinclus_mexicanus"
+
 stratification <- "bbs_usgs"
 models <- model <- "first_diff"
 model_variants <- model_variant <- "spatial"
@@ -34,8 +36,9 @@ setwd("C:/Users/tmeehan/Documents/GitHub/CBC_Spatial_Modeling")
 # get fit object and look at summaries -----------------------------------------
 # uses data_prep and fit from data prep and model fit script
 # bring in model fit object
-fit <- readRDS("output/fit_CBC_spatial_first_diff.rds")
-
+fit <- readRDS(paste0("output/fit_",species_l,"_CBC_spatial_first_diff.rds"))
+data_prep <- readRDS(paste0("data/data_prep_",species_l,".rds"))
+stan_data <- readRDS(paste0("output/datalist_",species_l,"_CBC_spatial_first_diff.rds"))
 # make a stratum df
 strat_df <- data_prep %>% 
   select(strata_name,strata_vec,non_zero,area_sq_km) %>% 
@@ -255,8 +258,55 @@ for(j in 1:nrow(yrpairs)){
 
 
 # look into effort correction --------------------------------------------------
+# 
+effort_preds <- data.frame(p_of_mean_effort = stan_data$effort_preds,
+                           effort = c(1:stan_data$n_effort_preds))
+
+# effort estimate by stratum ----------------------------------------------
+eff <- posterior_samples(fit = fit, parm = "effort_strata",
+                            dims = c("stratum","effort")) %>% 
+  posterior_sums(dims = c("stratum","effort")) %>% 
+  inner_join(., strat_df, by = "stratum") %>% 
+  inner_join(effort_preds,by = "effort")
+ 
+vis_eff <- ggplot(data = eff,
+                  aes(x = p_of_mean_effort, y = mean))+
+  geom_ribbon(aes(ymin = Q_025,ymax = Q_975),
+              colour = NA, alpha = 0.2)+
+  geom_line()+
+  geom_rug(data = data_prep,
+             aes(x = scaled_effort),
+           inherit.aes = FALSE)+ # rug plot to show where the effort variables are in the stratum
+  facet_wrap(vars(strata_name),
+             scales = "free_y")
+
+vis_eff
+
+
+
+# Effort hyperparameters --------------------------------------------------
+EFF <- posterior_samples(fit = fit, parm = "EFFORT",
+                             dims = c("effort")) %>% 
+  posterior_sums(dims = c("effort")) %>% 
+  inner_join(effort_preds,by = "effort")
+
+vis_EFF <- ggplot(data = EFF,
+                  aes(x = p_of_mean_effort, y = mean))+
+  geom_ribbon(aes(ymin = Q_025,ymax = Q_975),
+              colour = NA, alpha = 0.2)+
+  geom_line()+
+  geom_rug(data = data_prep,
+           aes(x = scaled_effort),
+           inherit.aes = FALSE) # rug plot to show where the effort variables are in the stratum
+
+
+vis_EFF
+
+# 
 # effort par summaries
 fit$summary(variables = c("b_raw", "p_raw"), "mean", "sd") %>% View()
+
+
 mcmc_hist(fit$draws("b_raw"))
 mcmc_hist(fit$draws("B"))
 mcmc_hist(fit$draws("p_raw"))
