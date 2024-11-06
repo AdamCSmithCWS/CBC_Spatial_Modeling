@@ -224,10 +224,12 @@ stanfit <- model$sample(
 # 
 # stanfit$save_object(paste0("output/fit_",species,"_CBC_spatial_first_diff_nonspat_eff.rds"))
 # saveRDS(stan_data, paste0("output/datalist_",species,"_CBC_spatial_first_diff_nonspat_eff.rds"))
+# saveRDS(summ, paste0("output/parameter_summary_",species,"_CBC_spatial_first_diff.rds"))
 
 summ <- stanfit$summary()
 
 
 stanfit$save_object(paste0("output/fit_",species,"_CBC_spatial_first_diff.rds"))
 saveRDS(stan_data, paste0("output/datalist_",species,"_CBC_spatial_first_diff.rds"))
+saveRDS(summ, paste0("output/parameter_summary_",species,"_CBC_spatial_first_diff.rds"))
 # ------------------------------------------------------------------------------
