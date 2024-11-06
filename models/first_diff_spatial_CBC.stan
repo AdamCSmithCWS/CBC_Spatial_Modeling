@@ -196,7 +196,8 @@ for(t in 1:(n_years_m1)){
 
    array[nstrata,nyears] real<lower=0> n; //full annual indices
    array[nstrata,nyears] real<lower=0> n_alt; //alternate annual indices
-   array[nstrata,100] real effort_effect_strata; //effort correction for count i
+   array[nstrata,n_effort_preds] real effort_strata; //effort correction for count i
+   array[n_effort_preds] real EFFORT; //effort correction for count i
    
   // vector[ncounts] log_lik; // alternative value to track the observervation level log-likelihood
   // potentially useful for estimating loo-diagnostics, such as looic
@@ -210,9 +211,12 @@ for(t in 1:(n_years_m1)){
     real b = sdb * b_raw[s] + B;  // effort slope for stratum i
     real p = sdp * p_raw[s] + P;  //effort coefficient for stratum i
     for(i in 1:n_effort_preds){
-    effort_effect_strata[s,i] = (b*((effort_preds[i]^p)-1))/p; //effort correction for count i
+    effort_strata[s,i] = (b*((effort_preds[i]^p)-1))/p; //effort correction for count i
     }
   }
+  for(i in 1:n_effort_preds){
+    EFFORT[i] = (B*((effort_preds[i]^P)-1))/P; //effort correction for count i
+    }
   
 for(y in 1:nyears){
 
