@@ -22,6 +22,8 @@ source("functions/posterior_summary_functions.R")
 source("functions/map_trends.R")
 
 species <- "American Dipper"
+species_l <- "Cinclus_mexicanus"
+
 stratification <- "bbs_usgs"
 models <- model <- "first_diff"
 model_variants <- model_variant <- "spatial"
@@ -33,8 +35,8 @@ data_sets <- data_set <- "cbc"
 # get fit object and look at summaries -----------------------------------------
 # uses data_prep and fit from data prep and model fit script
 # bring in model fit object
-fit <- readRDS("output/fit_CBC_spatial_first_diff.rds")
-
+fit <- readRDS(paste0("output/fit_",species_l,"_CBC_spatial_first_diff.rds"))
+data_prep <- readRDS(paste0("data/data_prep_",species_l,".rds"))
 # make a stratum df
 strat_df <- data_prep %>% 
   select(strata_name,strata_vec,non_zero,area_sq_km) %>% 
@@ -256,6 +258,8 @@ for(j in 1:nrow(yrpairs)){
 # look into effort correction --------------------------------------------------
 # effort par summaries
 fit$summary(variables = c("b_raw", "p_raw"), "mean", "sd") %>% View()
+
+
 mcmc_hist(fit$draws("b_raw"))
 mcmc_hist(fit$draws("B"))
 mcmc_hist(fit$draws("p_raw"))
