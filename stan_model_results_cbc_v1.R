@@ -1,44 +1,46 @@
 # setup ------------------------------------------------------------------------
-library(tidyverse)
-library(bbsBayes2)
-library(cmdstanr)
-library(patchwork)
+# library(patchwork)
 library(posterior)
 library(bayesplot)
-library(sf)
-library(geofacet)
-library(ggrepel)
+#library(geofacet)
+#library(ggrepel)
+library(ggpattern)
 library(HDInterval)
+library(naturecounts)
+library(cmdstanr)
+library(sf)
+library(tidyverse)
+library(bbsBayes2)
 
+# some some helper functions
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+source("functions/neighbours_define.R")
+source("functions/indices_cmdstan.R")
+source("functions/posterior_summary_functions.R")
+source("functions/map_trends.R")
 HDL <- function(x,int,upper = TRUE){
   b <- HDInterval::hdi(x,int)
   return(ifelse(upper,b[["upper"]],b[["lower"]]))
 }
 
-# some some helper functions
-source("functions/neighbours_define.R")
-source("functions/indices_cmdstan.R")
-source("functions/posterior_summary_functions.R")
-source("functions/map_trends.R")
-
+# settings
 species <- "American Dipper"
 species_l <- "Cinclus_mexicanus"
-
 stratification <- "bbs_usgs"
 models <- model <- "first_diff"
 model_variants <- model_variant <- "spatial"
 data_sets <- data_set <- "cbc"
-setwd("C:/Users/tmeehan/Documents/GitHub/CBC_Spatial_Modeling")
 # ------------------------------------------------------------------------------
 
 
 
-# get fit object and look at summaries -----------------------------------------
+# get fit object and other input data ------------------------------------------
 # uses data_prep and fit from data prep and model fit script
 # bring in model fit object
 fit <- readRDS(paste0("output/fit_",species_l,"_CBC_spatial_first_diff.rds"))
 data_prep <- readRDS(paste0("data/data_prep_",species_l,".rds"))
 stan_data <- readRDS(paste0("output/datalist_",species_l,"_CBC_spatial_first_diff.rds"))
+
 # make a stratum df
 strat_df <- data_prep %>% 
   select(strata_name,strata_vec,non_zero,area_sq_km) %>% 
@@ -54,11 +56,20 @@ yrs <- data_prep %>%
   distinct()
 
 # make a stratum map
-map <- bbsBayes2::load_map(stratify_by = "bbs_usgs") %>% 
+strata_map <- bbsBayes2::load_map(stratify_by = "bbs_usgs") %>% 
   select(-area_sq_km) %>% 
   inner_join(.,strat_df,
              by = "strata_name") %>% 
+  mutate(strata_vec = as.integer(factor(strata_name))) %>% 
   arrange(stratum)
+
+# get generation length
+sp_id <- meta_species_taxonomy() %>% 
+  filter(english_name %in% species) %>% pull(species_id)
+gen_years <- nc_query_table(table="SpeciesLifeHistory") %>%
+  filter(subcategDescr=="Average generation length (years)") %>% 
+  filter(speciesID %in% sp_id) %>% pull(value) %>% as.numeric()
+gen_3_years <- round(gen_years * 3)
 # ------------------------------------------------------------------------------
 
 
@@ -248,7 +259,7 @@ for(j in 1:nrow(yrpairs)){
            start_year == sy,
            end_year == ey)
   m2 <- map_trends(trend_tmp2,
-                   base_map_blank = map,
+                   base_map_blank = strata_map,
                    title = paste(data_set, model, model_variant),
                    region_name = "strata_name")
   print(m2)
@@ -257,18 +268,21 @@ for(j in 1:nrow(yrpairs)){
 
 
 
-# look into effort correction --------------------------------------------------
-# 
+# effort correction by stratum -------------------------------------------------
+
+# please help understanding scale of effort on x axes **************************
+
 effort_preds <- data.frame(p_of_mean_effort = stan_data$effort_preds,
                            effort = c(1:stan_data$n_effort_preds))
 
-# effort estimate by stratum ----------------------------------------------
+# effort curve by stratum samples
 eff <- posterior_samples(fit = fit, parm = "effort_strata",
                             dims = c("stratum","effort")) %>% 
   posterior_sums(dims = c("stratum","effort")) %>% 
   inner_join(., strat_df, by = "stratum") %>% 
-  inner_join(effort_preds,by = "effort")
- 
+  inner_join(effort_preds, by = "effort")
+
+# plot
 vis_eff <- ggplot(data = eff,
                   aes(x = p_of_mean_effort, y = mean))+
   geom_ribbon(aes(ymin = Q_025,ymax = Q_975),
@@ -276,20 +290,19 @@ vis_eff <- ggplot(data = eff,
   geom_line()+
   geom_rug(data = data_prep,
              aes(x = scaled_effort),
-           inherit.aes = FALSE)+ # rug plot to show where the effort variables are in the stratum
+           inherit.aes = FALSE)+ # rug plot to show observed effort
+  scale_x_continuous(limits=c(0, quantile(eff$p_of_mean_effort, probs=0.8))) +
   facet_wrap(vars(strata_name),
-             scales = "free_y")
-
-vis_eff
-
+             scales = "free_y"); vis_eff
+# ------------------------------------------------------------------------------
 
 
-# Effort hyperparameters --------------------------------------------------
+
+# effort hyperparameters -------------------------------------------------------
 EFF <- posterior_samples(fit = fit, parm = "EFFORT",
                              dims = c("effort")) %>% 
   posterior_sums(dims = c("effort")) %>% 
   inner_join(effort_preds,by = "effort")
-
 vis_EFF <- ggplot(data = EFF,
                   aes(x = p_of_mean_effort, y = mean))+
   geom_ribbon(aes(ymin = Q_025,ymax = Q_975),
@@ -297,58 +310,439 @@ vis_EFF <- ggplot(data = EFF,
   geom_line()+
   geom_rug(data = data_prep,
            aes(x = scaled_effort),
-           inherit.aes = FALSE) # rug plot to show where the effort variables are in the stratum
+           inherit.aes = FALSE); vis_EFF
 
-
-vis_EFF
-
-# 
 # effort par summaries
-fit$summary(variables = c("b_raw", "p_raw"), "mean", "sd") %>% View()
-
+eff_par_sum <- fit$summary(
+  variables = c("b_raw", "p_raw"),
+  posterior::default_summary_measures(),
+  extra_quantiles = ~posterior::quantile2(., probs = c(.025, .975))
+) %>% mutate(sig=ifelse(q2.5>0 | q97.5<0, 1, 0))
+View(eff_par_sum)
 
 mcmc_hist(fit$draws("b_raw"))
 mcmc_hist(fit$draws("B"))
 mcmc_hist(fit$draws("p_raw"))
 mcmc_hist(fit$draws("P"))
-
-# eff correction function
-bps <- fit$summary(variables = "p_raw", "mean", "sd") %>% 
-  mutate(strat=unlist(str_extract_all(variable, "\\d+"))) %>% 
-  select(strat, p=mean, p_sd=sd) %>% 
-  left_join(fit$summary(variables = "b_raw", "mean", "sd") %>% 
-  mutate(strat=unlist(str_extract_all(variable, "\\d+"))) %>% 
-  select(strat, B=mean, B_sd=sd)) %>% 
-  select(1,4,5,2,3) %>% 
-  mutate(strat=as.numeric(strat))
-eff_curve <- expand.grid(strat=as.numeric(bps$strat), eff=seq(1, 100, 3)) %>% 
-  arrange(strat) %>% left_join(bps) %>% 
-  left_join(strata_information %>% rename(strat=strata_vec)) %>% 
-  mutate(sc_eff=eff/mean(eff),
-         y=exp(B*((sc_eff^p)-1)/p))
-
-# eff correction plot
-ggplot(eff_curve, aes(x=eff, y=y)) + 
-  geom_line() + facet_wrap(~strata_name)
-eff_curve %>% select(strata_name, B, B_sd, p, p_sd) %>% distinct()
-
-# compare to gam per stratum
-library(mgcv)
-library(mgcViz)
-names(data_prep)
-td1 <- data_prep %>% filter(strata_name=="CA-AB-10")
-td1 <- data_prep %>% filter(strata_name=="CA-AB-11")
-td1 <- data_prep %>% filter(strata_name=="US-AK-4")
-td1 <- data_prep %>% filter(strata_name=="US-CA-15")
-td1 <- data_prep %>% filter(strata_name=="US-SD-17")
-summary(tm1 <- gam(how_many ~ s(count_year, k=12) + s(field_hours, k=4) +
-                     s(circle_vec, bs="re"),
-                         data=td1, family="nb"))
-b <- getViz(tm1)
-gridPrint(plot(sm(b, 1)) + l_points(shape = 19, size = 3, alpha = 0.3) + 
-            l_fitLine() + l_ciLine(),
-          plot(sm(b, 2)) + l_points(shape = 19, size = 3, alpha = 0.3) + 
-            l_fitLine() + l_ciLine(), 
-          ncol = 2)
 # ------------------------------------------------------------------------------
+
+
+
+
+# define trend periods and mapping function ------------------------------------
+# need to make sure I get the right YEAR ***************************************
+# start year for indices
+year_1 <- 1966 # first year
+year_exp <- 1993 # year when expanded BBS analyses started
+year_N <- 2019 # last year
+year_10 <- year_N - 10
+year_3g <- year_N - gen_3_years
+
+# trends plot function
+plot_trds <- function(trds=cntry_10yr_trds, spunit="country"){
+  breaks1 <- c(-7, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 7)
+  labls1 <- c(paste0("< ", breaks1[1]),
+              paste0(breaks1[-c(length(breaks1))],":", breaks1[-c(1)]),
+              paste0("> ",breaks1[length(breaks1)]))
+  labls1 <- paste0(labls1, "%")
+  cols1 <- c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", 
+             "#ffffbf", "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", 
+             "#313695")
+  if(spunit=="bcr"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
+      mutate(stratum=as.numeric(str_extract(strata_name, pattern="(\\d)+")))
+  }
+  if(spunit=="prov_state"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
+      mutate(stratum=strata_name)
+  }
+  if(spunit=="country"){
+    map0 <- bbsBayes2::load_map(stratify_by = NULL, type="Canada") %>% 
+      mutate(stratum="Canada")
+    map1 <- bbsBayes2::load_map(stratify_by = NULL, type="USA") %>% 
+      mutate(stratum="United States of America")
+    map1 <- bind_rows(map0, map1) %>% select(stratum=4)
+  }
+  map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1.2
+  if(spunit=="country"){
+    map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1
+  }
+  trds_map1 <- left_join(map1, trds, by="stratum") %>% 
+    mutate(t_plot = cut(trend, breaks = c(-Inf, breaks1, Inf),
+                        labels = labls1, ordered_result = TRUE)) %>% 
+    mutate(sig=as.character(sig)) %>% 
+    mutate(sig=ifelse(is.na(sig), "0", sig))
+  pal1 <- setNames(cols1, levels(trds_map1$t_plot))
+  title1 <- paste0(species, ": ", 
+                   unique(na.omit(trds_map1$start_year)), " through ", 
+                   unique(na.omit(trds_map1$end_year)))
+  tp <- ggplot() + 
+    geom_sf(data=trds_map1, aes(fill=t_plot)) + 
+    geom_sf_pattern(data=trds_map1,
+                    aes(fill=t_plot, pattern_type = sig),
+                    pattern = 'magick',
+                    pattern_scale = 0.5,
+                    pattern_fill = "black",
+                    show.legend = F) +
+    scale_pattern_type_discrete(choices = c("gray100", "left45")) +
+    scale_fill_manual(values = pal1,
+                      breaks = ~ .x[!is.na(.x)],
+                      na.value = "grey80",
+                      guide = guide_legend(title = "Trend (%/yr)", 
+                                           reverse = TRUE)) +
+    coord_sf(xlim = map_ext1[c("xmin", "xmax")],
+             ylim = map_ext1[c("ymin", "ymax")]) +
+    labs(title = title1)+
+    theme_bw() +
+    theme(plot.margin = unit(rep(1, 4),"mm"),
+          axis.text = element_text(size = 8),
+          title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5))
+  return(tp)
+}
+# ------------------------------------------------------------------------------
+
+
+
+# bcr index summaries ----------------------------------------------------------
+# weights table for aggregation during index and trend production
+bcr_wts <- strata_map %>% 
+  select(Stratum_Factored=strata_vec, Area=area_sq_km, bcr=bcr) %>% 
+  st_drop_geometry() %>% as.data.frame()
+
+# bcr indices
+bcr_idxs <- index_function(fit = fit,
+                           parameter = "n",
+                           strat = "Stratum_Factored",
+                           year = "Year",
+                           first_dim = "s",
+                           quant = 0.95,
+                           weights_df = bcr_wts,
+                           area = "Area",
+                           summary_regions = "bcr",
+                           year_1 = year_1,
+                           to_summarise = T)
+
+# observed counts ********************************** any ideas on getting effort 
+# corrected 'observed'?
+obs_mean <- data_prep %>% 
+  select(bcr, year=count_year, how_many) %>% 
+  group_by(bcr, year) %>% 
+  summarise(index = mean(how_many)) %>% 
+  ungroup()
+
+# plot indices for full bcr time series
+bcr_ind_plot <- ggplot() +
+  geom_ribbon(data = bcr_idxs$indices, 
+              aes(x = Year+year_1-1, ymin = lci, ymax = uci),
+              alpha = 0.3, fill="darkblue") +
+  geom_line(data = bcr_idxs$indices, 
+            aes(x = Year+year_1-1, y = mean), color="darkblue") +
+  geom_point(data = obs_mean,
+             aes(x = year, y = index),
+             alpha=0.3, size=2, shape=1) +
+  facet_wrap(~ paste0("BCR", bcr), scales = "free") +
+  scale_x_continuous(breaks=seq(min(bcr_idxs$indices$Year+year_1-1), 
+                                max(bcr_idxs$indices$Year+year_1-1), 
+                                7)) +
+  theme_bw() +
+  labs(x="Year", y="Abundance index (95% CrI) per year and BCR"); bcr_ind_plot
+
+# turn indices into lt trends
+bcr_lt_trds <- trends_function(bcr_idxs, start_year = year_1, 
+                                 end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=bcr) %>% 
+  mutate(strata_name=paste0("BCR", stratum),
+         start_year=year_1, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into medium term trends
+bcr_exp_trds <- trends_function(bcr_idxs, start_year = year_exp, 
+                                 end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=bcr) %>% 
+  mutate(strata_name=paste0("BCR", stratum),
+         start_year=year_exp, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 10 yr trends
+bcr_10yr_trds <- trends_function(bcr_idxs, start_year = (year_N - 10), 
+                        end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=bcr) %>% 
+  mutate(strata_name=paste0("BCR", stratum),
+         start_year=(year_N - 10), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 3 gen trends
+bcr_3gen_trds <- trends_function(bcr_idxs, start_year = (year_N - gen_3_years), 
+                        end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=bcr) %>% 
+  mutate(strata_name=paste0("BCR", stratum),
+         start_year=(year_N - gen_3_years), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# plot bcr trends
+tp_lt <- plot_trds(trds=bcr_lt_trds, spunit="bcr"); print(tp_lt)
+tp_exp <- plot_trds(trds=bcr_exp_trds, spunit="bcr"); print(tp_exp)
+tp_10yr <- plot_trds(trds=bcr_10yr_trds, spunit="bcr"); print(tp_10yr)
+tp_3gen <- plot_trds(trds=bcr_3gen_trds, spunit="bcr"); print(tp_3gen)
+# ------------------------------------------------------------------------------
+
+
+
+# province and state index summaries -------------------------------------------
+# weights table for aggregation during index and trend production
+ps_wts <- strata_map %>% 
+  select(Stratum_Factored=strata_vec, Area=area_sq_km, prov_state=prov_state) %>% 
+  st_drop_geometry() %>% as.data.frame()
+
+# province and state indices
+ps_idxs <- index_function(fit = fit,
+                           parameter = "n",
+                           strat = "Stratum_Factored",
+                           year = "Year",
+                           first_dim = "s",
+                           quant = 0.95,
+                           weights_df = ps_wts,
+                           area = "Area",
+                           summary_regions = "prov_state",
+                           year_1 = year_1,
+                           to_summarise = T)
+
+obs_mean <- data_prep %>% 
+  select(prov_state, year=count_year, how_many) %>% 
+  group_by(prov_state, year) %>% 
+  summarise(index = mean(how_many)) %>% 
+  ungroup()
+
+# plot indices for full bcr time series
+ps_ind_plot <- ggplot() +
+  geom_ribbon(data = ps_idxs$indices, 
+              aes(x = Year+year_1-1, ymin = lci, ymax = uci),
+              alpha = 0.3, fill="darkblue") +
+  geom_line(data = ps_idxs$indices, 
+            aes(x = Year+year_1-1, y = mean), color="darkblue") +
+  geom_point(data = obs_mean,
+             aes(x = year, y = index),
+             alpha=0.3, size=2, shape=1) +
+  facet_wrap(~ prov_state, scales = "free") +
+  scale_x_continuous(breaks=seq(min(ps_idxs$indices$Year+year_1-1), 
+                                max(ps_idxs$indices$Year+year_1-1), 
+                                7)) +
+  theme_bw() +
+  labs(x="Year", y="Abundance index (95% CrI) per year and province or state"); ps_plot
+
+# turn indices into lt trends
+ps_lt_trds <- trends_function(ps_idxs, start_year = year_1, 
+                               end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=prov_state) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_1, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into medium term trends
+ps_exp_trds <- trends_function(ps_idxs, start_year = year_exp, 
+                                end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=prov_state) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_exp, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 10 yr trends
+ps_10yr_trds <- trends_function(ps_idxs, start_year = (year_N - 10), 
+                                 end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=prov_state) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - 10), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 3 gen trends
+ps_3gen_trds <- trends_function(ps_idxs, start_year = (year_N - gen_3_years), 
+                                 end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=prov_state) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - gen_3_years), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# plot province state trends
+tp_lt <- plot_trds(trds=ps_lt_trds, spunit="prov_state"); print(tp_lt)
+tp_exp <- plot_trds(trds=ps_exp_trds, spunit="prov_state"); print(tp_exp)
+tp_10yr <- plot_trds(trds=ps_10yr_trds, spunit="prov_state"); print(tp_10yr)
+tp_3gen <- plot_trds(trds=ps_3gen_trds, spunit="prov_state"); print(tp_3gen)
+# ------------------------------------------------------------------------------
+
+
+
+
+
+
+# country index summaries ------------------------------------------------------
+# country weights table
+cntry_wts <- strata_map %>% 
+  select(Stratum_Factored=strata_vec, Area=area_sq_km, country=country) %>% 
+  st_drop_geometry() %>% as.data.frame()
+
+# country indices
+cntry_idxs <- index_function(fit = fit,
+                          parameter = "n",
+                          strat = "Stratum_Factored",
+                          year = "Year",
+                          first_dim = "s",
+                          quant = 0.95,
+                          weights_df = cntry_wts,
+                          area = "Area",
+                          summary_regions = "country",
+                          year_1 = 1966,
+                          to_summarise = T)
+
+obs_mean <- data_prep %>% 
+  select(country, year=count_year, how_many) %>% 
+  group_by(country, year) %>% 
+  summarise(index = mean(how_many)) %>% 
+  ungroup()
+
+# country time series
+cntry_idx_plot <- ggplot() +
+  geom_ribbon(data = cntry_idxs$indices, 
+              aes(x = Year+year_1-1, ymin = lci, ymax = uci),
+              alpha = 0.3, fill="darkblue") +
+  geom_line(data = cntry_idxs$indices, 
+            aes(x = Year+year_1-1, y = mean), color="darkblue") +
+  geom_point(data = obs_mean,
+             aes(x = year, y = index),
+             alpha=0.3, size=2, shape=1) +
+  facet_wrap(~ country, scales = "free") +
+  theme_bw(); cntry_idx_plot
+
+# turn indices into lt trends
+cntry_lt_trds <- trends_function(cntry_idxs, start_year = year_1, 
+                              end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=country) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_1, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into medium term trends
+cntry_exp_trds <- trends_function(cntry_idxs, start_year = year_exp, 
+                               end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=country) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_exp, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 10 yr trends
+cntry_10yr_trds <- trends_function(cntry_idxs, start_year = (year_N - 10), 
+                                end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=country) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - 10), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 3 gen trends
+cntry_3gen_trds <- trends_function(cntry_idxs, start_year = (year_N - gen_3_years), 
+                                end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=country) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - gen_3_years), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# plot province state trends
+tp_lt <- plot_trds(trds=cntry_lt_trds, spunit="country"); print(tp_lt)
+tp_exp <- plot_trds(trds=cntry_exp_trds, spunit="country"); print(tp_exp)
+tp_10yr <- plot_trds(trds=cntry_10yr_trds, spunit="country"); print(tp_10yr)
+tp_3gen <- plot_trds(trds=cntry_3gen_trds, spunit="country"); print(tp_3gen)
+
+# ------------------------------------------------------------------------------
+
+
+
+# continent summaries ----------------------------------------------------------
+# continent weights table
+cont_wts <- strata_map %>% 
+  select(Stratum_Factored=strata_vec, Area=area_sq_km) %>% 
+  mutate(continent="Canada and United States of America") %>% # add a continent field
+  st_drop_geometry() %>% as.data.frame()
+
+# continent indices
+cont_idxs <- index_function(fit = fit,
+                             parameter = "n",
+                             strat = "Stratum_Factored",
+                             year = "Year",
+                             first_dim = "s",
+                             quant = 0.95,
+                             weights_df = cont_wts,
+                             area = "Area",
+                             summary_regions = "continent",
+                             year_1 = 1966,
+                             to_summarise = T)
+
+obs_mean <- data_prep %>% 
+  mutate(continent="Canada and United States of America") %>% # add a continent field
+  select(continent, year=count_year, how_many) %>% 
+  group_by(continent, year) %>% 
+  summarise(index = mean(how_many))
+
+# continent time series
+cont_idx_plot <- ggplot() +
+  geom_ribbon(data = cont_idxs$indices, 
+              aes(x = Year+year_1-1, ymin = lci, ymax = uci),
+              alpha = 0.3, fill="darkblue") +
+  geom_line(data = cont_idxs$indices, 
+            aes(x = Year+year_1-1, y = mean), color="darkblue") +
+  geom_point(data = obs_mean,
+             aes(x = year, y = index),
+             alpha=0.3, size=2, shape=1) +
+  facet_wrap(~ continent, scales = "free") +
+  theme_bw(); cont_idx_plot
+
+
+# turn indices into lt trends
+cont_lt_trds <- trends_function(cont_idxs, start_year = year_1, 
+                                 end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=continent) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_1, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into medium term trends
+cont_exp_trds <- trends_function(cont_idxs, start_year = year_exp, 
+                                  end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=continent) %>% 
+  mutate(strata_name=stratum,
+         start_year=year_exp, end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 10 yr trends
+cont_10yr_trds <- trends_function(cont_idxs, start_year = (year_N - 10), 
+                                   end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=continent) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - 10), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+
+# turn indices into 3 gen trends
+cont_3gen_trds <- trends_function(cont_idxs, start_year = (year_N - gen_3_years), 
+                                   end_year=year_N, quant = 0.95) %>% 
+  rename(stratum=continent) %>% 
+  mutate(strata_name=stratum,
+         start_year=(year_N - gen_3_years), end_year=year_N,
+         sig=ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years=gen_3_years)
+# ------------------------------------------------------------------------------
+
+
 
