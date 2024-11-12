@@ -2,7 +2,7 @@
 library(mgcv)
 ny <- 54
 x <- 1:ny
-fx <- 10 + 3*sin(x/10) + (-0.03*x)
+fx <- 15 + 3*sin(x/10) + (-0.03*x)
 y <- rpois(ny, fx)
 x <- x + 1965
 y <- log(y)
