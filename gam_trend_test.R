@@ -2,7 +2,8 @@
 library(mgcv)
 ny <- 54
 x <- 1:ny
-y <- rpois(ny, 10 + sin(x) + (-0.05*x))
+fx <- 10 + 3*sin(x/10) + (-0.03*x)
+y <- rpois(ny, fx)
 x <- x + 1965
 y <- log(y)
 kts <- round(ny/4)
