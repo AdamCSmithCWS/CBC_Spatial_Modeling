@@ -387,8 +387,7 @@ bcr_ind_plot <- ggplot() +
   labs(x="Year", y="Abundance index (95% CrI) per year and BCR"); bcr_ind_plot
 
 # turn indices into lt trends
-bcr_lt_trds <- trends_function(ind_list = bcr_idxs, 
-                               start_year = year_1, 
+bcr_lt_trds <- trends_function(ind_list = bcr_idxs, start_year = year_1, 
                                end_year = year_N, quant = 0.95) %>% 
   rename(stratum = bcr) %>% 
   mutate(strata_name = paste0("BCR", stratum),
@@ -404,8 +403,7 @@ bcr_exp_trds <- trends_function(ind_list = bcr_idxs, start_year = year_exp,
          gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-bcr_10yr_trds <- trends_function(ind_list = bcr_idxs, 
-                                 start_year = year_10, 
+bcr_10yr_trds <- trends_function(ind_list = bcr_idxs, start_year = year_10, 
                                  end_year = year_N, quant = 0.95) %>% 
   rename(stratum = bcr) %>% 
   mutate(strata_name = paste0("BCR", stratum),
@@ -413,8 +411,7 @@ bcr_10yr_trds <- trends_function(ind_list = bcr_idxs,
          gen_3_year = gen_3_years)
 
 # turn indices into 3 gen trends
-bcr_3gen_trds <- trends_function(ind_list = bcr_idxs, 
-                                 start_year = year_3g, 
+bcr_3gen_trds <- trends_function(ind_list = bcr_idxs, start_year = year_3g, 
                                  end_year = year_N, quant = 0.95) %>% 
   rename(stratum = bcr) %>% 
   mutate(strata_name = paste0("BCR", stratum),
@@ -430,7 +427,8 @@ tp_3gen <- map_function(trds = bcr_3gen_trds, spunit = "bcr")
 # all together
 ptch1 <- ((tp_lt + tp_exp) / (tp_10yr + tp_3gen))
 ptch1 <- ptch1 + plot_layout(guides = 'collect')
-cairo_pdf("./output/test.pdf",  width = 9.25, height = 10)
+cairo_pdf(paste0("./output/", gsub(" ", "_", species), "_bcr_trend_map.pdf"),  
+          width = 9.25, height = 10)
 ptch1
 dev.off()
 # ------------------------------------------------------------------------------
@@ -477,7 +475,8 @@ ps_ind_plot <- ggplot() +
                                 max(ps_idxs$indices$Year+year_1-1), 
                                 7)) +
   theme_bw() +
-  labs(x="Year", y="Abundance index (95% CrI) per year and province or state"); ps_plot
+  labs(x="Year", 
+       y="Abundance index (95% CrI) per year and province or state"); ps_ind_plot
 
 # turn indices into lt trends
 ps_lt_trds <- trends_function(ind_list = ps_idxs, start_year = year_1, 
@@ -496,8 +495,7 @@ ps_exp_trds <- trends_function(ind_list = ps_idxs, start_year = year_exp,
          gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-ps_10yr_trds <- trends_function(ind_list = ps_idxs, 
-                                start_year = year_10, 
+ps_10yr_trds <- trends_function(ind_list = ps_idxs, start_year = year_10, 
                                 end_year = year_N, quant = 0.95) %>% 
   rename(stratum = prov_state) %>% 
   mutate(strata_name = stratum,
@@ -505,8 +503,7 @@ ps_10yr_trds <- trends_function(ind_list = ps_idxs,
          gen_3_years = gen_3_years)
 
 # turn indices into 3 gen trends
-ps_3gen_trds <- trends_function(ind_list = ps_idxs, 
-                                start_year = year_3g, 
+ps_3gen_trds <- trends_function(ind_list = ps_idxs, start_year = year_3g, 
                                 end_year=year_N, quant = 0.95) %>% 
   rename(stratum = prov_state) %>% 
   mutate(strata_name = stratum,
@@ -514,14 +511,18 @@ ps_3gen_trds <- trends_function(ind_list = ps_idxs,
          gen_3_years = gen_3_years)
 
 # plot province state trends
-tp_lt <- plot_trds(trds = ps_lt_trds, spunit = "prov_state"); print(tp_lt)
-tp_exp <- plot_trds(trds = ps_exp_trds, spunit = "prov_state"); print(tp_exp)
-tp_10yr <- plot_trds(trds = ps_10yr_trds, spunit = "prov_state"); print(tp_10yr)
-tp_3gen <- plot_trds(trds = ps_3gen_trds, spunit = "prov_state"); print(tp_3gen)
+tp_lt <- map_function(trds = ps_lt_trds, spunit = "prov_state")
+tp_exp <- map_function(trds = ps_exp_trds, spunit = "prov_state")
+tp_10yr <- map_function(trds = ps_10yr_trds, spunit = "prov_state")
+tp_3gen <- map_function(trds = ps_3gen_trds, spunit = "prov_state")
 
 # all together
 ptch1 <- ((tp_lt + tp_exp) / (tp_10yr + tp_3gen))
+ptch1 <- ptch1 + plot_layout(guides = 'collect')
+cairo_pdf(paste0("./output/", gsub(" ", "_", species), "_prov_state_trend_map.pdf"),  
+          width = 9.25, height = 10)
 ptch1
+dev.off()
 # ------------------------------------------------------------------------------
 
 

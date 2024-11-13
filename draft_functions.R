@@ -409,8 +409,9 @@ index_function <- function(fit = stanfit,
 
 
 
+
 # new map function -------------------------------------------------------------
-map_function <- function(trds = cntry_10yr_trds, spunit = "country"){
+map_function <- function(trds = bcr_10yr_trds, spunit = "bcr"){
   breaks1 <- c(-7, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 7)
   labls1 <- c(paste0("< ", breaks1[1]),
               paste0(breaks1[-c(length(breaks1))],":", breaks1[-c(1)]),
@@ -419,35 +420,39 @@ map_function <- function(trds = cntry_10yr_trds, spunit = "country"){
   cols1 <- c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", 
              "#ffffbf", "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", 
              "#313695")
-  if(spunit=="bcr"){
-    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
-      mutate(stratum=as.numeric(str_extract(strata_name, pattern="(\\d)+")))
+  if(spunit == "bcr"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type = "strata") %>% 
+      mutate(stratum = as.numeric(str_extract(strata_name, pattern = "(\\d)+")))
   }
-  if(spunit=="prov_state"){
-    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
-      mutate(stratum=strata_name)
+  if(spunit == "prov_state"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type = "strata") %>% 
+      mutate(stratum = strata_name)
   }
   map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1.2
-  trds_map1 <- left_join(map1, trds, by="stratum") %>% 
+  trds_map1 <- left_join(map1, trds, by = "stratum") %>% 
     mutate(t_plot = cut(trend, breaks = c(-Inf, breaks1, Inf),
                         labels = labls1, ordered_result = TRUE)) %>% 
-    mutate(sig=as.character(sig)) %>% 
-    mutate(sig=ifelse(is.na(sig), "0", sig))
+    mutate(t_plot = factor(t_plot, levels = labls1)) %>% 
+    mutate(sig = as.character(sig)) %>% 
+    mutate(sig = ifelse(is.na(sig), "0", sig))
   pal1 <- setNames(cols1, levels(trds_map1$t_plot))
   title1 <- paste0(species, ": ", 
                    unique(na.omit(trds_map1$start_year)), " through ", 
                    unique(na.omit(trds_map1$end_year)))
   tp <- ggplot() + 
-    geom_sf(data=trds_map1, aes(fill=t_plot)) + 
-    geom_sf_pattern(data=trds_map1,
-                    aes(fill=t_plot, pattern_type = sig),
+    geom_sf(data = map1, fill = "grey80") + 
+    geom_sf(data = trds_map1 %>% filter(!is.na(t_plot)), 
+            aes(fill = t_plot), show.legend = TRUE) + 
+    geom_sf_pattern(data = trds_map1,
+                    aes(fill = t_plot, pattern_type = sig),
                     pattern = 'magick',
                     pattern_scale = 0.5,
                     pattern_fill = "black",
                     show.legend = F) +
     scale_pattern_type_discrete(choices = c("gray100", "left45")) +
     scale_fill_manual(values = pal1,
-                      breaks = ~ .x[!is.na(.x)],
+                      drop = F,
+                      na.translate = F,
                       na.value = "grey80",
                       guide = guide_legend(title = "Trend (%/yr)", 
                                            reverse = TRUE)) +
@@ -455,9 +460,11 @@ map_function <- function(trds = cntry_10yr_trds, spunit = "country"){
              ylim = map_ext1[c("ymin", "ymax")]) +
     labs(title = title1)+
     theme_bw() +
+    guides(pattern_type = "none") + 
     theme(plot.margin = unit(rep(1, 4),"mm"),
           axis.text = element_text(size = 8),
-          title = element_text(size = 12),
+          legend.text = element_text(size = 8),
+          title = element_text(size = 11),
           plot.title = element_text(hjust = 0.5))
   return(tp)
 }
@@ -493,8 +500,8 @@ trends_function <- function(ind_list,
   }
   
   # calc quantiles
-  lu <- ((1-(quant))/2)
-  uu <- 1-((1-(quant))/2)
+  lu <- ((1 - (quant)) / 2)
+  uu <- 1 - ((1 - (quant)) / 2)
   nyrs <- end_year - start_year + 1 # have to add 1 right?????????????
 
   # get samples
@@ -511,28 +518,28 @@ trends_function <- function(ind_list,
   tt <- indt %>% 
     group_by(.draw, stratum_trend) %>% 
     summarise(
-      t = tgam(y=.value, x=true_year, t1=start_year, t2=end_year),
-      ch = ((((t/100)+1)^nyrs)-1)*100,
+      t = tgam(y = .value, x = true_year, t1 = start_year, t2 = end_year),
+      ch = ((((t / 100) + 1)^nyrs) - 1) * 100,
       .groups = "keep") %>% 
     group_by(stratum_trend) %>% 
     summarise(trend = mean(t),
-            lci = quantile(t,lu,names = FALSE),
-            uci = quantile(t,uu,names = FALSE),
+            lci = quantile(t, lu, names = FALSE),
+            uci = quantile(t, uu, names = FALSE),
             percent_change = median(ch),
-            p_ch_lci = quantile(ch,lu,names = FALSE),
-            p_ch_uci = quantile(ch,uu,names = FALSE),
-            prob_decline = prob_dec(ch,0),
-            prob_decline_GT30 = prob_dec(ch,-30),
-            prob_decline_GT50 = prob_dec(ch,-50),
-            prob_decline_GT70 = prob_dec(ch,-70)) %>% 
+            p_ch_lci = quantile(ch, lu, names = FALSE),
+            p_ch_uci = quantile(ch, uu, names = FALSE),
+            prob_decline = prob_dec(ch, 0),
+            prob_decline_GT30 = prob_dec(ch, -30),
+            prob_decline_GT50 = prob_dec(ch, -50),
+            prob_decline_GT70 = prob_dec(ch, -70)) %>% 
     rename_with(., ~gsub(replacement = summary_regions,
-                       pattern = "stratum_trend",.x,
+                       pattern = "stratum_trend", .x,
                        fixed = TRUE))
   
   # add metadata
   tt <- tt %>% 
     mutate(Region_type = summary_regions,
-           start_year=start_year, end_year=end_year) 
+           start_year = start_year, end_year = end_year) 
   return(tt)
 }
 # ------------------------------------------------------------------------------
@@ -542,30 +549,33 @@ trends_function <- function(ind_list,
 
 # helper functions --------------------------------------------------------
 
-p_lt <- function(x,th){
-  length(which(x < th))/length(x)
-}
+# p_lt <- function(x, th){
+#   length(which(x < th)) / length(x)
+# }
+
+# p_neg <- function(x){
+#   length(which(x < 0)) / length(x)
+# }
+
+# texp <- function(x, ny = 2019-1974){
+#   (x^(1 / ny) - 1) * 100
+# }
 
 
-p_neg <- function(x){
-  length(which(x < 0))/length(x)
-}
 
-texp <- function(x,ny = 2019-1974){
-  (x^(1/ny)-1)*100
-}
 
 # gam trend function. p-spline with nyears/4 knots. gaussian on log Y
+# this function is used in the trends_function()
 tgam <- function(y, x, t1, t2){
   require(mgcv)
   ny <- length(x) # full time series
   kts <- as.numeric(round(ny/4, 0)) # knot every four years
-  df <- data.frame(y=y, x=x)
+  df <- data.frame(y = y, x = x)
   # predict from p-spline with ny/4 knots, gaussian on log Y
-  yhat <- exp(fitted(gam(y ~ 1 + s(x, k=kts, bs="ps"),
-                         family="gaussian", data=df)))
-  nt1 <- yhat[which(x==t1)] # pick start year
-  nt2 <- yhat[which(x==t2)] # pick end year
+  yhat <- exp(fitted(gam(y ~ 1 + s(x, k = kts, bs = "ps"),
+                         family = "gaussian", data = df)))
+  nt1 <- yhat[which(x == t1)] # pick start year
+  nt2 <- yhat[which(x == t2)] # pick end year
   trd <- 100 * (((nt2 / nt1)^(1 / (t2 - t1))) - 1) # calc annl percent chg
   return(trd)
 }
@@ -575,12 +585,18 @@ tgam <- function(y, x, t1, t2){
 #   (x-1)*100
 # }
 
+
+
+# this function is used in the trends_function()
 prob_dec <- function(ch,thresh){
   length(which(ch < thresh))/length(ch)
 }
 
+
+
 ### function to extract the dimension values from an bayesian model fit
 ### works within the gather_samples function
+# this function is used in posterior_samples()
 dim_ext <- function(dim = 1,
                     var = "",
                     cl = "Parameter",
@@ -609,11 +625,14 @@ dim_ext <- function(dim = 1,
   
 }
 
+
+
 ### function to generate the same tidy output as gather-draws in tidybayes package
 ## dims should be a character vector defining the dimensions of the parameter
 ## e.g., parm = "nsmooth", dims = c("stratum","year"),
 ## function works with cmdstanr output by default and rstan fits
 ## with is_rstan == TRUE
+# this function is used in index_function()
 posterior_samples <- function(fit = cmdstanfit,
                               parm = "nsmooth",
                               dims = NULL,
@@ -665,6 +684,8 @@ posterior_samples <- function(fit = cmdstanfit,
   return(plong)
   
 }
+
+
 
 # posterior summaries
 posterior_sums <- function(samples = n_samples,
