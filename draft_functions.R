@@ -251,188 +251,240 @@ index_function <- function(fit = stanfit,
 # ------------------------------------------------------------------------------
 
 
-# Trends function ---------------------------------------------------------
-#tr_tmp <- trends_function(ind_list = ttinds)
-trends_function <- function(ind_list = ind_list,
-                            start_year = NULL,
-                            end_year = NULL,
-                            quant = 0.95){
-  
-  indices = ind_list$indices
-  samples = ind_list$samples
-  parameter = ind_list$parameter
-  strat = ind_list$strat
-  year = ind_list$year
-  dims = ind_list$dims
-  weights_df = ind_list$weights_df
-  area = ind_list$area
-  summary_regions = ind_list$summary_regions
-  to_summarise = ind_list$to_summarise
-  
-  if(is.null(end_year)){
-    end_year <- max(samples$true_year)
+
+
+# # old trends function ---------------------------------------------------------
+# #tr_tmp <- trends_function(ind_list = ttinds)
+# trends_function <- function(ind_list = ind_list,
+#                             start_year = NULL,
+#                             end_year = NULL,
+#                             quant = 0.95){
+#   
+#   indices = ind_list$indices
+#   samples = ind_list$samples
+#   parameter = ind_list$parameter
+#   strat = ind_list$strat
+#   year = ind_list$year
+#   dims = ind_list$dims
+#   weights_df = ind_list$weights_df
+#   area = ind_list$area
+#   summary_regions = ind_list$summary_regions
+#   to_summarise = ind_list$to_summarise
+#   
+#   if(is.null(end_year)){
+#     end_year <- max(samples$true_year)
+#   }
+#   if(is.null(start_year)){
+#     start_year <- min(samples$true_year)
+#   }
+#   
+#   nyrs <- end_year-start_year
+#   lu <- ((1-(quant))/2)
+#   uu <- 1-((1-(quant))/2)
+#   
+#   if(!is.null(weights_df) & to_summarise){
+#     
+#     
+#     indt <- samples %>% 
+#       filter(true_year %in% c(start_year,end_year)) %>% 
+#       ungroup() %>% 
+#       select(-matches(match = year,ignore.case = FALSE)) %>% 
+#       pivot_wider(names_from = true_year,
+#                   values_from = .value,
+#                   names_prefix = "Y") %>% 
+#       rename_with(., ~gsub(replacement = "start",
+#                            pattern = paste0("Y",start_year),.x,
+#                            fixed = TRUE))%>% 
+#       rename_with(., ~gsub(replacement = "end",
+#                            pattern = paste0("Y",end_year),.x,
+#                            fixed = TRUE))%>% 
+#       rename_with(., ~gsub(replacement = "stratum_trend",
+#                            pattern = summary_regions,.x,
+#                            fixed = TRUE))
+#     
+#     tt <- indt %>% 
+#       group_by(.draw,stratum_trend) %>% 
+#       summarise(end = sum(end),
+#                 start = sum(start),
+#                 t = texp(end/start, ny = nyrs),
+#                 ch = chng(end/start),
+#                 .groups = "keep") %>% 
+#       group_by(stratum_trend) %>% 
+#       summarise(trend = mean(t),
+#                 lci = quantile(t,lu,names = FALSE),
+#                 uci = quantile(t,uu,names = FALSE),
+#                 percent_change = median(ch),
+#                 p_ch_lci = quantile(ch,lu,names = FALSE),
+#                 p_ch_uci = quantile(ch,uu,names = FALSE),
+#                 prob_decline = prob_dec(ch,0),
+#                 prob_decline_GT30 = prob_dec(ch,-30),
+#                 prob_decline_GT50 = prob_dec(ch,-50),
+#                 prob_decline_GT70 = prob_dec(ch,-70))%>% 
+#       rename_with(., ~gsub(replacement = summary_regions,
+#                            pattern = "stratum_trend",.x,
+#                            fixed = TRUE))
+#     
+#   }else{ #else is.null weights_df
+#     
+#     if(!is.null(strat)){
+#       indt <- samples %>% 
+#         filter(true_year %in% c(start_year,end_year)) %>% 
+#         #ungroup() %>% 
+#         select(-matches(match = year,ignore.case = FALSE)) %>% 
+#         pivot_wider(names_from = true_year,
+#                     values_from = .value,
+#                     names_prefix = "Y") %>% 
+#         rename_with(., ~gsub(replacement = "start",
+#                              pattern = paste0("Y",start_year),.x,
+#                              fixed = TRUE))%>% 
+#         rename_with(., ~gsub(replacement = "end",
+#                              pattern = paste0("Y",end_year),.x,
+#                              fixed = TRUE))%>% 
+#         rename_with(., ~gsub(replacement = "stratum_trend",
+#                              pattern = strat,.x,
+#                              fixed = TRUE))
+#       
+#       tt <- indt %>% 
+#         group_by(.draw,stratum_trend) %>% 
+#         summarise(t = texp(end/start,ny = nyrs),
+#                   ch = chng(end/start),
+#                   .groups = "keep") %>% 
+#         group_by(stratum_trend) %>% 
+#         summarise(trend = mean(t),
+#                   lci = quantile(t,lu,names = FALSE),
+#                   uci = quantile(t,uu,names = FALSE),
+#                   percent_change = median(ch),
+#                   p_ch_lci = quantile(ch,lu,names = FALSE),
+#                   p_ch_uci = quantile(ch,uu,names = FALSE),
+#                   prob_decline = prob_dec(ch,0),
+#                   prob_decline_GT30 = prob_dec(ch,-30),
+#                   prob_decline_GT50 = prob_dec(ch,-50),
+#                   prob_decline_GT70 = prob_dec(ch,-70))%>% 
+#         rename_with(., ~gsub(replacement = strat,
+#                              pattern = "stratum_trend",.x,
+#                              fixed = TRUE))
+#       
+#     }else{
+#       
+#       indt <- samples %>% 
+#         filter(true_year %in% c(start_year,end_year)) %>% 
+#         #ungroup() %>% 
+#         select(-matches(match = year,ignore.case = FALSE)) %>% 
+#         pivot_wider(names_from = true_year,
+#                     values_from = .value,
+#                     names_prefix = "Y") %>% 
+#         rename_with(., ~gsub(replacement = "start",
+#                              pattern = paste0("Y",start_year),.x,
+#                              fixed = TRUE))%>% 
+#         rename_with(., ~gsub(replacement = "end",
+#                              pattern = paste0("Y",end_year),.x,
+#                              fixed = TRUE))
+#   
+#       
+#       tt <- indt %>% 
+#         group_by(.draw) %>% 
+#         summarise(t = texp(end/start,ny = nyrs),
+#                   ch = chng(end/start),
+#                   .groups = "keep") %>% 
+#         summarise(trend = mean(t),
+#                   lci = quantile(t,lu,names = FALSE),
+#                   uci = quantile(t,uu,names = FALSE),
+#                   percent_change = median(ch),
+#                   p_ch_lci = quantile(ch,lu,names = FALSE),
+#                   p_ch_uci = quantile(ch,uu,names = FALSE),
+#                   prob_decline = prob_dec(ch,0),
+#                   prob_decline_GT30 = prob_dec(ch,-30),
+#                   prob_decline_GT50 = prob_dec(ch,-50),
+#                   prob_decline_GT70 = prob_dec(ch,-70))
+#     }
+#     
+#     
+#   }
+#   
+#   tt <- tt %>% 
+#     mutate(Region_type = summary_regions)
+#   return(tt)
+# }
+# # ------------------------------------------------------------------------------
+
+
+
+# new map function -------------------------------------------------------------
+map_function <- function(trds = cntry_10yr_trds, spunit = "country"){
+  breaks1 <- c(-7, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 7)
+  labls1 <- c(paste0("< ", breaks1[1]),
+              paste0(breaks1[-c(length(breaks1))],":", breaks1[-c(1)]),
+              paste0("> ",breaks1[length(breaks1)]))
+  labls1 <- paste0(labls1, "%")
+  cols1 <- c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", 
+             "#ffffbf", "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", 
+             "#313695")
+  if(spunit=="bcr"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
+      mutate(stratum=as.numeric(str_extract(strata_name, pattern="(\\d)+")))
   }
-  if(is.null(start_year)){
-    start_year <- min(samples$true_year)
+  if(spunit=="prov_state"){
+    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
+      mutate(stratum=strata_name)
   }
-  
-  nyrs <- end_year-start_year
-  lu <- ((1-(quant))/2)
-  uu <- 1-((1-(quant))/2)
-  
-  if(!is.null(weights_df) & to_summarise){
-    
-    
-    indt <- samples %>% 
-      filter(true_year %in% c(start_year,end_year)) %>% 
-      ungroup() %>% 
-      select(-matches(match = year,ignore.case = FALSE)) %>% 
-      pivot_wider(names_from = true_year,
-                  values_from = .value,
-                  names_prefix = "Y") %>% 
-      rename_with(., ~gsub(replacement = "start",
-                           pattern = paste0("Y",start_year),.x,
-                           fixed = TRUE))%>% 
-      rename_with(., ~gsub(replacement = "end",
-                           pattern = paste0("Y",end_year),.x,
-                           fixed = TRUE))%>% 
-      rename_with(., ~gsub(replacement = "stratum_trend",
-                           pattern = summary_regions,.x,
-                           fixed = TRUE))
-    
-    tt <- indt %>% 
-      group_by(.draw,stratum_trend) %>% 
-      summarise(end = sum(end),
-                start = sum(start),
-                t = texp(end/start, ny = nyrs),
-                ch = chng(end/start),
-                .groups = "keep") %>% 
-      group_by(stratum_trend) %>% 
-      summarise(trend = mean(t),
-                lci = quantile(t,lu,names = FALSE),
-                uci = quantile(t,uu,names = FALSE),
-                percent_change = median(ch),
-                p_ch_lci = quantile(ch,lu,names = FALSE),
-                p_ch_uci = quantile(ch,uu,names = FALSE),
-                prob_decline = prob_dec(ch,0),
-                prob_decline_GT30 = prob_dec(ch,-30),
-                prob_decline_GT50 = prob_dec(ch,-50),
-                prob_decline_GT70 = prob_dec(ch,-70))%>% 
-      rename_with(., ~gsub(replacement = summary_regions,
-                           pattern = "stratum_trend",.x,
-                           fixed = TRUE))
-    
-  }else{ #else is.null weights_df
-    
-    if(!is.null(strat)){
-      indt <- samples %>% 
-        filter(true_year %in% c(start_year,end_year)) %>% 
-        #ungroup() %>% 
-        select(-matches(match = year,ignore.case = FALSE)) %>% 
-        pivot_wider(names_from = true_year,
-                    values_from = .value,
-                    names_prefix = "Y") %>% 
-        rename_with(., ~gsub(replacement = "start",
-                             pattern = paste0("Y",start_year),.x,
-                             fixed = TRUE))%>% 
-        rename_with(., ~gsub(replacement = "end",
-                             pattern = paste0("Y",end_year),.x,
-                             fixed = TRUE))%>% 
-        rename_with(., ~gsub(replacement = "stratum_trend",
-                             pattern = strat,.x,
-                             fixed = TRUE))
-      
-      tt <- indt %>% 
-        group_by(.draw,stratum_trend) %>% 
-        summarise(t = texp(end/start,ny = nyrs),
-                  ch = chng(end/start),
-                  .groups = "keep") %>% 
-        group_by(stratum_trend) %>% 
-        summarise(trend = mean(t),
-                  lci = quantile(t,lu,names = FALSE),
-                  uci = quantile(t,uu,names = FALSE),
-                  percent_change = median(ch),
-                  p_ch_lci = quantile(ch,lu,names = FALSE),
-                  p_ch_uci = quantile(ch,uu,names = FALSE),
-                  prob_decline = prob_dec(ch,0),
-                  prob_decline_GT30 = prob_dec(ch,-30),
-                  prob_decline_GT50 = prob_dec(ch,-50),
-                  prob_decline_GT70 = prob_dec(ch,-70))%>% 
-        rename_with(., ~gsub(replacement = strat,
-                             pattern = "stratum_trend",.x,
-                             fixed = TRUE))
-      
-    }else{
-      
-      indt <- samples %>% 
-        filter(true_year %in% c(start_year,end_year)) %>% 
-        #ungroup() %>% 
-        select(-matches(match = year,ignore.case = FALSE)) %>% 
-        pivot_wider(names_from = true_year,
-                    values_from = .value,
-                    names_prefix = "Y") %>% 
-        rename_with(., ~gsub(replacement = "start",
-                             pattern = paste0("Y",start_year),.x,
-                             fixed = TRUE))%>% 
-        rename_with(., ~gsub(replacement = "end",
-                             pattern = paste0("Y",end_year),.x,
-                             fixed = TRUE))
-  
-      
-      tt <- indt %>% 
-        group_by(.draw) %>% 
-        summarise(t = texp(end/start,ny = nyrs),
-                  ch = chng(end/start),
-                  .groups = "keep") %>% 
-        summarise(trend = mean(t),
-                  lci = quantile(t,lu,names = FALSE),
-                  uci = quantile(t,uu,names = FALSE),
-                  percent_change = median(ch),
-                  p_ch_lci = quantile(ch,lu,names = FALSE),
-                  p_ch_uci = quantile(ch,uu,names = FALSE),
-                  prob_decline = prob_dec(ch,0),
-                  prob_decline_GT30 = prob_dec(ch,-30),
-                  prob_decline_GT50 = prob_dec(ch,-50),
-                  prob_decline_GT70 = prob_dec(ch,-70))
-    }
-    
-    
-  }
-  
-  tt <- tt %>% 
-    mutate(Region_type = summary_regions)
-  return(tt)
+  map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1.2
+  trds_map1 <- left_join(map1, trds, by="stratum") %>% 
+    mutate(t_plot = cut(trend, breaks = c(-Inf, breaks1, Inf),
+                        labels = labls1, ordered_result = TRUE)) %>% 
+    mutate(sig=as.character(sig)) %>% 
+    mutate(sig=ifelse(is.na(sig), "0", sig))
+  pal1 <- setNames(cols1, levels(trds_map1$t_plot))
+  title1 <- paste0(species, ": ", 
+                   unique(na.omit(trds_map1$start_year)), " through ", 
+                   unique(na.omit(trds_map1$end_year)))
+  tp <- ggplot() + 
+    geom_sf(data=trds_map1, aes(fill=t_plot)) + 
+    geom_sf_pattern(data=trds_map1,
+                    aes(fill=t_plot, pattern_type = sig),
+                    pattern = 'magick',
+                    pattern_scale = 0.5,
+                    pattern_fill = "black",
+                    show.legend = F) +
+    scale_pattern_type_discrete(choices = c("gray100", "left45")) +
+    scale_fill_manual(values = pal1,
+                      breaks = ~ .x[!is.na(.x)],
+                      na.value = "grey80",
+                      guide = guide_legend(title = "Trend (%/yr)", 
+                                           reverse = TRUE)) +
+    coord_sf(xlim = map_ext1[c("xmin", "xmax")],
+             ylim = map_ext1[c("ymin", "ymax")]) +
+    labs(title = title1)+
+    theme_bw() +
+    theme(plot.margin = unit(rep(1, 4),"mm"),
+          axis.text = element_text(size = 8),
+          title = element_text(size = 12),
+          plot.title = element_text(hjust = 0.5))
+  return(tp)
 }
 # ------------------------------------------------------------------------------
 
 
 
 
-
-
-
-
-
-
-
-# Trends function ---------------------------------------------------------
+# new trends function based on gam endpoints -----------------------------------
 #tr_tmp <- trends_function(ind_list = ttinds)
-trends_function <- function(ind_list = cntry_idxs,
-                            start_year = 2009,
-                            end_year = 2019,
+trends_function <- function(ind_list,
+                            start_year,
+                            end_year,
                             quant = 0.95){
+  # get info
+  indices <- ind_list$indices
+  samples <- ind_list$samples
+  parameter <- ind_list$parameter
+  strat <- ind_list$strat
+  year <- ind_list$year
+  dims <- ind_list$dims
+  weights_df <- ind_list$weights_df
+  area <- ind_list$area
+  summary_regions <- ind_list$summary_regions
+  to_summarise <- ind_list$to_summarise
   
-  indices = ind_list$indices
-  samples = ind_list$samples
-  parameter = ind_list$parameter
-  strat = ind_list$strat
-  year = ind_list$year
-  dims = ind_list$dims
-  weights_df = ind_list$weights_df
-  area = ind_list$area
-  summary_regions = ind_list$summary_regions
-  to_summarise = ind_list$to_summarise
-  
+  # fill in star and end years
   if(is.null(end_year)){
     end_year <- max(samples$true_year)
   }
@@ -440,27 +492,32 @@ trends_function <- function(ind_list = cntry_idxs,
     start_year <- min(samples$true_year)
   }
   
-  nyrs <- end_year-start_year+1 ########### added 1, right??
+  # calc quantiles
   lu <- ((1-(quant))/2)
   uu <- 1-((1-(quant))/2)
+  nyrs <- end_year - start_year + 1 # have to add 1 right?????????????
 
+  # get samples
   indt <- samples %>% 
     ungroup() %>% 
     rename_with(., ~gsub(replacement = "stratum_trend",
                        pattern = summary_regions,.x,
                        fixed = TRUE))
   
+  # test data
+  # indt <- indt %>% filter(.draw<100)
+  
+  # generate trends
   tt <- indt %>% 
     group_by(.draw, stratum_trend) %>% 
     summarise(
       t = tgam(y=.value, x=true_year, t1=start_year, t2=end_year),
-      ch = t,
+      ch = ((((t/100)+1)^nyrs)-1)*100,
       .groups = "keep") %>% 
     group_by(stratum_trend) %>% 
     summarise(trend = mean(t),
             lci = quantile(t,lu,names = FALSE),
             uci = quantile(t,uu,names = FALSE),
-            percent_change = median(ch),
             percent_change = median(ch),
             p_ch_lci = quantile(ch,lu,names = FALSE),
             p_ch_uci = quantile(ch,uu,names = FALSE),
@@ -468,28 +525,17 @@ trends_function <- function(ind_list = cntry_idxs,
             prob_decline_GT30 = prob_dec(ch,-30),
             prob_decline_GT50 = prob_dec(ch,-50),
             prob_decline_GT70 = prob_dec(ch,-70)) %>% 
-    
     rename_with(., ~gsub(replacement = summary_regions,
                        pattern = "stratum_trend",.x,
                        fixed = TRUE))
-
- 
   
+  # add metadata
   tt <- tt %>% 
-    mutate(Region_type = summary_regions)
+    mutate(Region_type = summary_regions,
+           start_year=start_year, end_year=end_year) 
   return(tt)
 }
-
-
-
-
-
-
-
-
-
-
-
+# ------------------------------------------------------------------------------
 
 
 
@@ -510,45 +556,28 @@ texp <- function(x,ny = 2019-1974){
 }
 
 # gam trend function. p-spline with nyears/4 knots. gaussian on log Y
-library(mgcv)
-ny <- 54
-x <- 1:ny
-y <- rpois(ny, 3 + 1*x - 0.015*x^2)
-x <- x + 1965
-y <- log(y)
-kts <- round(ny/4)
-plot(x=x, y=y, type="l")
-lines(y=fitted(gam(y ~ 1 + s(x, k=kts, bs="ps"), family="gaussian")),
-     x=x)
-tgam(y=y, x=x, t1=1966, t2=2019)
-
-tgam <- function(y, x, t1=2009, t2=2019){
-  ny <- length(x)
-  kts <- as.numeric(round(ny/4, 0))
+tgam <- function(y, x, t1, t2){
+  require(mgcv)
+  ny <- length(x) # full time series
+  kts <- as.numeric(round(ny/4, 0)) # knot every four years
   df <- data.frame(y=y, x=x)
-  
-  yhat <- exp(fitted(gam(y ~ 1 + s(x, k=kts, bs="ps"), 
+  # predict from p-spline with ny/4 knots, gaussian on log Y
+  yhat <- exp(fitted(gam(y ~ 1 + s(x, k=kts, bs="ps"),
                          family="gaussian", data=df)))
-  nt1 <- yhat[which(x==t1)]
-  nt2 <- yhat[which(x==t2)]
-  trd <- 100 * (((nt2 / nt1)^(1 / (t2 - t1))) - 1)
+  nt1 <- yhat[which(x==t1)] # pick start year
+  nt2 <- yhat[which(x==t2)] # pick end year
+  trd <- 100 * (((nt2 / nt1)^(1 / (t2 - t1))) - 1) # calc annl percent chg
   return(trd)
 }
-
-test <- indt %>% filter(.draw<2, stratum_trend=="Canada") %>%
-  ungroup()
-tgam(y=test$.value, x=test$true_year, t1=1966, t2=2019)
 #
 
-chng <- function(x){
-  (x-1)*100
-}
+# chng <- function(x){
+#   (x-1)*100
+# }
 
 prob_dec <- function(ch,thresh){
-  
   length(which(ch < thresh))/length(ch)
 }
-
 
 ### function to extract the dimension values from an bayesian model fit
 ### works within the gather_samples function
@@ -579,7 +608,6 @@ dim_ext <- function(dim = 1,
   return(dds)
   
 }
-
 
 ### function to generate the same tidy output as gather-draws in tidybayes package
 ## dims should be a character vector defining the dimensions of the parameter
@@ -638,10 +666,7 @@ posterior_samples <- function(fit = cmdstanfit,
   
 }
 
-
-
-
-
+# posterior summaries
 posterior_sums <- function(samples = n_samples,
                            quantiles = c(0.025,0.05,0.25,0.5,0.75,0.95,0.975),
                            ci = 0.95,
@@ -831,31 +856,6 @@ posterior_sums <- function(samples = n_samples,
   return(sums)
   
 }
-
-
-
-
-# make some weights
-bcr_wts <- strata_map %>% 
-  select(Stratum_Factored=strata_vec, Area=area_sq_km, bcr=bcr) %>% 
-  st_drop_geometry() %>% as.data.frame()
-
-# get index samples and make summaries
-bcr_idxs <- index_function(fit = fit,
-                           parameter = "n",
-                           strat = "Stratum_Factored",
-                           year = "Year",
-                           first_dim = "s",
-                           quant = 0.95,
-                           weights_df = bcr_wts,
-                           area = "Area",
-                           summary_regions = "bcr",
-                           year_1 = year_1)
-
-head(bcr_idxs$samples)
-
-
-
-
+ # -----------------------------------------------------------------------------
 
 

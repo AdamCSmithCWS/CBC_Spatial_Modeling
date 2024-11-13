@@ -2,6 +2,7 @@
 # library(patchwork)
 library(posterior)
 library(bayesplot)
+library(patchwork)
 #library(geofacet)
 #library(ggrepel)
 library(ggpattern)
@@ -74,197 +75,197 @@ gen_3_years <- round(gen_years * 3)
 
 
 
-# stratum level indices and trends ---------------------------------------------
-# posterior samples of stratum indices
-ind_samples <- posterior_samples(fit = fit, parm = "n",
-                                 dims = c("stratum","yr")) %>% 
-  inner_join(., strat_df, by = "stratum") %>% 
-  inner_join(., yrs, by = "yr")
-
-# stratum level index summaries
-inds_strat <- 
-  ind_samples %>%
-  group_by(strata_name,year) %>% 
-  summarise(index = median(.value),
-            index_q_0.05 = HDL(.value,0.9,upper = FALSE),
-            index_q_0.95 = HDL(.value,0.9,upper = TRUE),
-            .groups = "keep") %>% 
-  mutate(index_type = "full")
-
-# use stratum indices to compute stratum trends of different length
-first_years <- c(1966, 1970, 1993, 2009)
-trends_strata <- NULL
-for(j in 1:length(first_years)){
-  ys <- first_years[j]
-  ye <- 2019
-  nyrs <- ye-ys
-  trend_tmp <- ind_samples %>% 
-    filter(year %in% c(ys,ye)) %>% 
-    ungroup() %>% 
-    select(-matches(match = "yr",ignore.case = FALSE)) %>% 
-    pivot_wider(names_from = year,
-                values_from = .value,
-                names_prefix = "Y") %>% 
-    rename_with(., ~gsub(replacement = "start",
-                         pattern = paste0("Y",ys),.x,
-                         fixed = TRUE))%>% 
-    rename_with(., ~gsub(replacement = "end",
-                         pattern = paste0("Y",ye),.x,
-                         fixed = TRUE))%>% 
-    group_by(.draw,strata_name) %>% 
-    summarise(end = sum(end),
-              start = sum(start),
-              t = texp(end/start,ny = nyrs),
-              ch = chng(end/start),
-              .groups = "keep") %>% 
-    group_by(strata_name) %>% 
-    summarise(trend = mean(t),
-              lci = quantile(t,0.025,names = FALSE),
-              uci = quantile(t,0.975,names = FALSE),
-              width_CI = uci-lci) %>% 
-    mutate(model = model,
-           model_variant = model_variant,
-           start_year = ys,
-           end_year = ye,
-           trend_length = nyrs,
-           data_set = data_set)
-  trends_strata <- bind_rows(trends_strata, trend_tmp)
-}
-# ------------------------------------------------------------------------------
-
-
-
-# continental level indices and trends -----------------------------------------
-# make continent scaled index samples by summing across strata
-comp_samples <- 
-  ind_samples %>%
-  mutate(.value = .value * area_weight) %>% 
-  group_by(.draw, year) %>% #draw-wise summary of area-weighted indices
-  summarise(.value = sum(.value),
-            .groups = "drop")
-
-# continent scaled index summaries
-# inds and smooth are the same because its first difference
-inds_comp <- inds_comp_smooth <-
-  comp_samples %>%  
-  group_by(year) %>% 
-  summarise(index = median(.value),
-            index_q_0.05 = HDL(.value,0.9,upper = FALSE),
-            index_q_0.95 = HDL(.value,0.9,upper = TRUE),
-            .groups = "keep") %>% 
-  mutate(strata_name = "continent") %>% 
-  mutate(index_type = "full")
-
-# combine stratum and continental index summaries for later
-inds_all <- bind_rows(inds_comp,
-                      inds_strat) %>% 
-  mutate(model = "first_difference",
-         model_variant = "spatial",
-         data_set = "cbc")
-
-# use indices to make continent scaled trends of different lengths
-trends_comp <- NULL
-for(j in 1:length(first_years)){
-  ys <- first_years[j]
-  ye <- 2019
-  nyrs <- ye-ys
-  trend_tmp <- comp_samples %>% 
-    filter(year %in% c(ys,ye)) %>% 
-    ungroup() %>% 
-    select(-matches(match = "yr",ignore.case = FALSE)) %>% 
-    pivot_wider(names_from = year,
-                values_from = .value,
-                names_prefix = "Y") %>% 
-    rename_with(., ~gsub(replacement = "start",
-                         pattern = paste0("Y",ys),.x,
-                         fixed = TRUE))%>% 
-    rename_with(., ~gsub(replacement = "end",
-                         pattern = paste0("Y",ye),.x,
-                         fixed = TRUE))%>% 
-    group_by(.draw) %>% 
-    summarise(end = sum(end),
-              start = sum(start),
-              t = texp(end/start,ny = nyrs),
-              ch = chng(end/start),
-              .groups = "drop") %>% 
-    summarise(trend = mean(t),
-              lci = quantile(t,0.025,names = FALSE),
-              uci = quantile(t,0.975,names = FALSE),
-              width_CI = uci-lci) %>% 
-    mutate(model = model,
-           model_variant = model_variant,
-           start_year = ys,
-           end_year = ye,
-           trend_length = nyrs,
-           data_set = data_set,
-           strata_name = "continent")
-  trends_comp <- bind_rows(trends_comp, trend_tmp)
-}
-# ------------------------------------------------------------------------------
-
-
-
-# index plots ------------------------------------------------------------------
-# continent
-tmp <- inds_all %>% 
-  filter(strata_name == "continent")
-tp <- ggplot(data = tmp,
-            aes(x = year, y = index)) +
-  geom_ribbon(aes(ymin = index_q_0.05,
-                  ymax = index_q_0.95),
-              alpha = 0.2, fill="darkblue") +
-  geom_line(color="darkblue") +
-  theme_bw(); tp
-
-# strata
-obs_mean <- data_prep %>% 
-  select(strata_name, year=count_year, how_many) %>% 
-  group_by(strata_name, year) %>% 
-  summarise(index = mean(how_many))
-tmp <- inds_all %>% 
-  filter(strata_name != "continent",
-         data_set == "cbc",
-         index_type == "full")
-tp <- ggplot() +
-  geom_ribbon(data = tmp, 
-              aes(x = year, ymin = index_q_0.05, ymax = index_q_0.95),
-              alpha = 0.3, fill="darkblue") +
-  geom_line(data = tmp, 
-            aes(x = year, y = index), color="darkblue") +
-  geom_point(data = obs_mean, 
-             aes(x = year, y = index),
-             alpha=0.3, size=2, shape=1) +
-  facet_wrap(~ strata_name, scales = "free") +
-  theme_bw(); tp
-# ------------------------------------------------------------------------------
-
-
-
-# map trends -------------------------------------------------------------------
-trends_out <- bind_rows(trends_strata, trends_comp)
-yrpairs <- trends_out %>% 
-  filter(data_set == as.character("cbc")) %>% 
-  select(start_year, end_year) %>% 
-  distinct() %>% 
-  arrange(start_year)
-for(j in 1:nrow(yrpairs)){
-  sy <- as.integer(yrpairs[j, "start_year"])
-  ey <- as.integer(yrpairs[j, "end_year"])
-  model_variantsel <- model_variant
-  trend_tmp2 <- trends_out %>% 
-    filter(model == model,
-           model_variant == model_variant,
-           data_set == data_set,
-           strata_name != "continent",
-           start_year == sy,
-           end_year == ey)
-  m2 <- map_trends(trend_tmp2,
-                   base_map_blank = strata_map,
-                   title = paste(data_set, model, model_variant),
-                   region_name = "strata_name")
-  print(m2)
-}
-# ------------------------------------------------------------------------------
+# # stratum level indices and trends ---------------------------------------------
+# # posterior samples of stratum indices
+# ind_samples <- posterior_samples(fit = fit, parm = "n",
+#                                  dims = c("stratum","yr")) %>% 
+#   inner_join(., strat_df, by = "stratum") %>% 
+#   inner_join(., yrs, by = "yr")
+# 
+# # stratum level index summaries
+# inds_strat <- 
+#   ind_samples %>%
+#   group_by(strata_name,year) %>% 
+#   summarise(index = median(.value),
+#             index_q_0.05 = HDL(.value,0.9,upper = FALSE),
+#             index_q_0.95 = HDL(.value,0.9,upper = TRUE),
+#             .groups = "keep") %>% 
+#   mutate(index_type = "full")
+# 
+# # use stratum indices to compute stratum trends of different length
+# first_years <- c(1966, 1970, 1993, 2009)
+# trends_strata <- NULL
+# for(j in 1:length(first_years)){
+#   ys <- first_years[j]
+#   ye <- 2019
+#   nyrs <- ye-ys
+#   trend_tmp <- ind_samples %>% 
+#     filter(year %in% c(ys,ye)) %>% 
+#     ungroup() %>% 
+#     select(-matches(match = "yr",ignore.case = FALSE)) %>% 
+#     pivot_wider(names_from = year,
+#                 values_from = .value,
+#                 names_prefix = "Y") %>% 
+#     rename_with(., ~gsub(replacement = "start",
+#                          pattern = paste0("Y",ys),.x,
+#                          fixed = TRUE))%>% 
+#     rename_with(., ~gsub(replacement = "end",
+#                          pattern = paste0("Y",ye),.x,
+#                          fixed = TRUE))%>% 
+#     group_by(.draw,strata_name) %>% 
+#     summarise(end = sum(end),
+#               start = sum(start),
+#               t = texp(end/start,ny = nyrs),
+#               ch = chng(end/start),
+#               .groups = "keep") %>% 
+#     group_by(strata_name) %>% 
+#     summarise(trend = mean(t),
+#               lci = quantile(t,0.025,names = FALSE),
+#               uci = quantile(t,0.975,names = FALSE),
+#               width_CI = uci-lci) %>% 
+#     mutate(model = model,
+#            model_variant = model_variant,
+#            start_year = ys,
+#            end_year = ye,
+#            trend_length = nyrs,
+#            data_set = data_set)
+#   trends_strata <- bind_rows(trends_strata, trend_tmp)
+# }
+# # ------------------------------------------------------------------------------
+# 
+# 
+# 
+# # continental level indices and trends -----------------------------------------
+# # make continent scaled index samples by summing across strata
+# comp_samples <- 
+#   ind_samples %>%
+#   mutate(.value = .value * area_weight) %>% 
+#   group_by(.draw, year) %>% #draw-wise summary of area-weighted indices
+#   summarise(.value = sum(.value),
+#             .groups = "drop")
+# 
+# # continent scaled index summaries
+# # inds and smooth are the same because its first difference
+# inds_comp <- inds_comp_smooth <-
+#   comp_samples %>%  
+#   group_by(year) %>% 
+#   summarise(index = median(.value),
+#             index_q_0.05 = HDL(.value,0.9,upper = FALSE),
+#             index_q_0.95 = HDL(.value,0.9,upper = TRUE),
+#             .groups = "keep") %>% 
+#   mutate(strata_name = "continent") %>% 
+#   mutate(index_type = "full")
+# 
+# # combine stratum and continental index summaries for later
+# inds_all <- bind_rows(inds_comp,
+#                       inds_strat) %>% 
+#   mutate(model = "first_difference",
+#          model_variant = "spatial",
+#          data_set = "cbc")
+# 
+# # use indices to make continent scaled trends of different lengths
+# trends_comp <- NULL
+# for(j in 1:length(first_years)){
+#   ys <- first_years[j]
+#   ye <- 2019
+#   nyrs <- ye-ys
+#   trend_tmp <- comp_samples %>% 
+#     filter(year %in% c(ys,ye)) %>% 
+#     ungroup() %>% 
+#     select(-matches(match = "yr",ignore.case = FALSE)) %>% 
+#     pivot_wider(names_from = year,
+#                 values_from = .value,
+#                 names_prefix = "Y") %>% 
+#     rename_with(., ~gsub(replacement = "start",
+#                          pattern = paste0("Y",ys),.x,
+#                          fixed = TRUE))%>% 
+#     rename_with(., ~gsub(replacement = "end",
+#                          pattern = paste0("Y",ye),.x,
+#                          fixed = TRUE))%>% 
+#     group_by(.draw) %>% 
+#     summarise(end = sum(end),
+#               start = sum(start),
+#               t = texp(end/start,ny = nyrs),
+#               ch = chng(end/start),
+#               .groups = "drop") %>% 
+#     summarise(trend = mean(t),
+#               lci = quantile(t,0.025,names = FALSE),
+#               uci = quantile(t,0.975,names = FALSE),
+#               width_CI = uci-lci) %>% 
+#     mutate(model = model,
+#            model_variant = model_variant,
+#            start_year = ys,
+#            end_year = ye,
+#            trend_length = nyrs,
+#            data_set = data_set,
+#            strata_name = "continent")
+#   trends_comp <- bind_rows(trends_comp, trend_tmp)
+# }
+# # ------------------------------------------------------------------------------
+# 
+# 
+# 
+# # index plots ------------------------------------------------------------------
+# # continent
+# tmp <- inds_all %>% 
+#   filter(strata_name == "continent")
+# tp <- ggplot(data = tmp,
+#             aes(x = year, y = index)) +
+#   geom_ribbon(aes(ymin = index_q_0.05,
+#                   ymax = index_q_0.95),
+#               alpha = 0.2, fill="darkblue") +
+#   geom_line(color="darkblue") +
+#   theme_bw(); tp
+# 
+# # strata
+# obs_mean <- data_prep %>% 
+#   select(strata_name, year=count_year, how_many) %>% 
+#   group_by(strata_name, year) %>% 
+#   summarise(index = mean(how_many))
+# tmp <- inds_all %>% 
+#   filter(strata_name != "continent",
+#          data_set == "cbc",
+#          index_type == "full")
+# tp <- ggplot() +
+#   geom_ribbon(data = tmp, 
+#               aes(x = year, ymin = index_q_0.05, ymax = index_q_0.95),
+#               alpha = 0.3, fill="darkblue") +
+#   geom_line(data = tmp, 
+#             aes(x = year, y = index), color="darkblue") +
+#   geom_point(data = obs_mean, 
+#              aes(x = year, y = index),
+#              alpha=0.3, size=2, shape=1) +
+#   facet_wrap(~ strata_name, scales = "free") +
+#   theme_bw(); tp
+# # ------------------------------------------------------------------------------
+# 
+# 
+# 
+# # map trends -------------------------------------------------------------------
+# trends_out <- bind_rows(trends_strata, trends_comp)
+# yrpairs <- trends_out %>% 
+#   filter(data_set == as.character("cbc")) %>% 
+#   select(start_year, end_year) %>% 
+#   distinct() %>% 
+#   arrange(start_year)
+# for(j in 1:nrow(yrpairs)){
+#   sy <- as.integer(yrpairs[j, "start_year"])
+#   ey <- as.integer(yrpairs[j, "end_year"])
+#   model_variantsel <- model_variant
+#   trend_tmp2 <- trends_out %>% 
+#     filter(model == model,
+#            model_variant == model_variant,
+#            data_set == data_set,
+#            strata_name != "continent",
+#            start_year == sy,
+#            end_year == ey)
+#   m2 <- map_trends(trend_tmp2,
+#                    base_map_blank = strata_map,
+#                    title = paste(data_set, model, model_variant),
+#                    region_name = "strata_name")
+#   print(m2)
+# }
+# # ------------------------------------------------------------------------------
 
 
 
@@ -329,77 +330,14 @@ mcmc_hist(fit$draws("P"))
 
 
 
-# define trend periods and mapping function ------------------------------------
+# define trend periods ---------------------------------------------------------
 # need to make sure I get the right YEAR ***************************************
 # start year for indices
 year_1 <- 1966 # first year
 year_exp <- 1993 # year when expanded BBS analyses started
 year_N <- 2019 # last year
-year_10 <- year_N - 10
-year_3g <- year_N - gen_3_years
-
-# trends plot function
-plot_trds <- function(trds=cntry_10yr_trds, spunit="country"){
-  breaks1 <- c(-7, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 7)
-  labls1 <- c(paste0("< ", breaks1[1]),
-              paste0(breaks1[-c(length(breaks1))],":", breaks1[-c(1)]),
-              paste0("> ",breaks1[length(breaks1)]))
-  labls1 <- paste0(labls1, "%")
-  cols1 <- c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", 
-             "#ffffbf", "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", 
-             "#313695")
-  if(spunit=="bcr"){
-    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
-      mutate(stratum=as.numeric(str_extract(strata_name, pattern="(\\d)+")))
-  }
-  if(spunit=="prov_state"){
-    map1 <- bbsBayes2::load_map(stratify_by = spunit, type="strata") %>% 
-      mutate(stratum=strata_name)
-  }
-  if(spunit=="country"){
-    map0 <- bbsBayes2::load_map(stratify_by = NULL, type="Canada") %>% 
-      mutate(stratum="Canada")
-    map1 <- bbsBayes2::load_map(stratify_by = NULL, type="USA") %>% 
-      mutate(stratum="United States of America")
-    map1 <- bind_rows(map0, map1) %>% select(stratum=4)
-  }
-  map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1.2
-  if(spunit=="country"){
-    map_ext1 <- sf::st_bbox(right_join(map1, trds)) * 1
-  }
-  trds_map1 <- left_join(map1, trds, by="stratum") %>% 
-    mutate(t_plot = cut(trend, breaks = c(-Inf, breaks1, Inf),
-                        labels = labls1, ordered_result = TRUE)) %>% 
-    mutate(sig=as.character(sig)) %>% 
-    mutate(sig=ifelse(is.na(sig), "0", sig))
-  pal1 <- setNames(cols1, levels(trds_map1$t_plot))
-  title1 <- paste0(species, ": ", 
-                   unique(na.omit(trds_map1$start_year)), " through ", 
-                   unique(na.omit(trds_map1$end_year)))
-  tp <- ggplot() + 
-    geom_sf(data=trds_map1, aes(fill=t_plot)) + 
-    geom_sf_pattern(data=trds_map1,
-                    aes(fill=t_plot, pattern_type = sig),
-                    pattern = 'magick',
-                    pattern_scale = 0.5,
-                    pattern_fill = "black",
-                    show.legend = F) +
-    scale_pattern_type_discrete(choices = c("gray100", "left45")) +
-    scale_fill_manual(values = pal1,
-                      breaks = ~ .x[!is.na(.x)],
-                      na.value = "grey80",
-                      guide = guide_legend(title = "Trend (%/yr)", 
-                                           reverse = TRUE)) +
-    coord_sf(xlim = map_ext1[c("xmin", "xmax")],
-             ylim = map_ext1[c("ymin", "ymax")]) +
-    labs(title = title1)+
-    theme_bw() +
-    theme(plot.margin = unit(rep(1, 4),"mm"),
-          axis.text = element_text(size = 8),
-          title = element_text(size = 12),
-          plot.title = element_text(hjust = 0.5))
-  return(tp)
-}
+year_10 <- year_N - 10 + 1
+year_3g <- year_N - gen_3_years + 1
 # ------------------------------------------------------------------------------
 
 
@@ -449,46 +387,52 @@ bcr_ind_plot <- ggplot() +
   labs(x="Year", y="Abundance index (95% CrI) per year and BCR"); bcr_ind_plot
 
 # turn indices into lt trends
-bcr_lt_trds <- trends_function(bcr_idxs, start_year = year_1, 
-                                 end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=bcr) %>% 
-  mutate(strata_name=paste0("BCR", stratum),
-         start_year=year_1, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+bcr_lt_trds <- trends_function(ind_list = bcr_idxs, 
+                               start_year = year_1, 
+                               end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = bcr) %>% 
+  mutate(strata_name = paste0("BCR", stratum),
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into medium term trends
-bcr_exp_trds <- trends_function(bcr_idxs, start_year = year_exp, 
-                                 end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=bcr) %>% 
-  mutate(strata_name=paste0("BCR", stratum),
-         start_year=year_exp, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+bcr_exp_trds <- trends_function(ind_list = bcr_idxs, start_year = year_exp, 
+                                end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = bcr) %>% 
+  mutate(strata_name = paste0("BCR", stratum),
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-bcr_10yr_trds <- trends_function(bcr_idxs, start_year = (year_N - 10), 
-                        end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=bcr) %>% 
-  mutate(strata_name=paste0("BCR", stratum),
-         start_year=(year_N - 10), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+bcr_10yr_trds <- trends_function(ind_list = bcr_idxs, 
+                                 start_year = year_10, 
+                                 end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = bcr) %>% 
+  mutate(strata_name = paste0("BCR", stratum),
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_year = gen_3_years)
 
 # turn indices into 3 gen trends
-bcr_3gen_trds <- trends_function(bcr_idxs, start_year = (year_N - gen_3_years), 
-                        end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=bcr) %>% 
-  mutate(strata_name=paste0("BCR", stratum),
-         start_year=(year_N - gen_3_years), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+bcr_3gen_trds <- trends_function(ind_list = bcr_idxs, 
+                                 start_year = year_3g, 
+                                 end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = bcr) %>% 
+  mutate(strata_name = paste0("BCR", stratum),
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # plot bcr trends
-tp_lt <- plot_trds(trds=bcr_lt_trds, spunit="bcr"); print(tp_lt)
-tp_exp <- plot_trds(trds=bcr_exp_trds, spunit="bcr"); print(tp_exp)
-tp_10yr <- plot_trds(trds=bcr_10yr_trds, spunit="bcr"); print(tp_10yr)
-tp_3gen <- plot_trds(trds=bcr_3gen_trds, spunit="bcr"); print(tp_3gen)
+tp_lt <- map_function(trds = bcr_lt_trds, spunit = "bcr")
+tp_exp <- map_function(trds = bcr_exp_trds, spunit = "bcr")
+tp_10yr <- map_function(trds = bcr_10yr_trds, spunit = "bcr")
+tp_3gen <- map_function(trds = bcr_3gen_trds, spunit = "bcr")
+
+# all together
+ptch1 <- ((tp_lt + tp_exp) / (tp_10yr + tp_3gen))
+ptch1 <- ptch1 + plot_layout(guides = 'collect')
+cairo_pdf("./output/test.pdf",  width = 9.25, height = 10)
+ptch1
+dev.off()
 # ------------------------------------------------------------------------------
 
 
@@ -536,46 +480,48 @@ ps_ind_plot <- ggplot() +
   labs(x="Year", y="Abundance index (95% CrI) per year and province or state"); ps_plot
 
 # turn indices into lt trends
-ps_lt_trds <- trends_function(ps_idxs, start_year = year_1, 
-                               end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=prov_state) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_1, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+ps_lt_trds <- trends_function(ind_list = ps_idxs, start_year = year_1, 
+                              end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = prov_state) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into medium term trends
-ps_exp_trds <- trends_function(ps_idxs, start_year = year_exp, 
-                                end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=prov_state) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_exp, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+ps_exp_trds <- trends_function(ind_list = ps_idxs, start_year = year_exp, 
+                               end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = prov_state) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-ps_10yr_trds <- trends_function(ps_idxs, start_year = (year_N - 10), 
-                                 end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=prov_state) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - 10), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+ps_10yr_trds <- trends_function(ind_list = ps_idxs, 
+                                start_year = year_10, 
+                                end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = prov_state) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 3 gen trends
-ps_3gen_trds <- trends_function(ps_idxs, start_year = (year_N - gen_3_years), 
-                                 end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=prov_state) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - gen_3_years), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+ps_3gen_trds <- trends_function(ind_list = ps_idxs, 
+                                start_year = year_3g, 
+                                end_year=year_N, quant = 0.95) %>% 
+  rename(stratum = prov_state) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # plot province state trends
-tp_lt <- plot_trds(trds=ps_lt_trds, spunit="prov_state"); print(tp_lt)
-tp_exp <- plot_trds(trds=ps_exp_trds, spunit="prov_state"); print(tp_exp)
-tp_10yr <- plot_trds(trds=ps_10yr_trds, spunit="prov_state"); print(tp_10yr)
-tp_3gen <- plot_trds(trds=ps_3gen_trds, spunit="prov_state"); print(tp_3gen)
+tp_lt <- plot_trds(trds = ps_lt_trds, spunit = "prov_state"); print(tp_lt)
+tp_exp <- plot_trds(trds = ps_exp_trds, spunit = "prov_state"); print(tp_exp)
+tp_10yr <- plot_trds(trds = ps_10yr_trds, spunit = "prov_state"); print(tp_10yr)
+tp_3gen <- plot_trds(trds = ps_3gen_trds, spunit = "prov_state"); print(tp_3gen)
+
+# all together
+ptch1 <- ((tp_lt + tp_exp) / (tp_10yr + tp_3gen))
+ptch1
 # ------------------------------------------------------------------------------
 
 
@@ -619,50 +565,40 @@ cntry_idx_plot <- ggplot() +
              aes(x = year, y = index),
              alpha=0.3, size=2, shape=1) +
   facet_wrap(~ country, scales = "free") +
+  labs(x = "Year", y = "Abundance index (95% CrI)") +
   theme_bw(); cntry_idx_plot
 
 # turn indices into lt trends
-cntry_lt_trds <- trends_function(cntry_idxs, start_year = year_1, 
-                              end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=country) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_1, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cntry_lt_trds <- trends_function(ind_list = cntry_idxs, start_year = year_1, 
+                                 end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = country) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into medium term trends
-cntry_exp_trds <- trends_function(cntry_idxs, start_year = year_exp, 
-                               end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=country) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_exp, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cntry_exp_trds <- trends_function(ind_list = cntry_idxs, start_year = year_exp, 
+                               end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = country) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-cntry_10yr_trds <- trends_function(cntry_idxs, start_year = (year_N - 10), 
-                                end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=country) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - 10), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cntry_10yr_trds <- trends_function(ind_list = cntry_idxs, start_year = year_10, 
+                                end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = country) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 3 gen trends
-cntry_3gen_trds <- trends_function(cntry_idxs, start_year = (year_N - gen_3_years), 
-                                end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=country) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - gen_3_years), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
-
-# plot province state trends
-tp_lt <- plot_trds(trds=cntry_lt_trds, spunit="country"); print(tp_lt)
-tp_exp <- plot_trds(trds=cntry_exp_trds, spunit="country"); print(tp_exp)
-tp_10yr <- plot_trds(trds=cntry_10yr_trds, spunit="country"); print(tp_10yr)
-tp_3gen <- plot_trds(trds=cntry_3gen_trds, spunit="country"); print(tp_3gen)
-
+cntry_3gen_trds <- trends_function(ind_list = cntry_idxs, start_year = year_3g, 
+                                end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = country) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 # ------------------------------------------------------------------------------
 
 
@@ -704,44 +640,41 @@ cont_idx_plot <- ggplot() +
              aes(x = year, y = index),
              alpha=0.3, size=2, shape=1) +
   facet_wrap(~ continent, scales = "free") +
+  labs(x = "Year", y = "Abundance index (95% CrI)") +
   theme_bw(); cont_idx_plot
 
 
 # turn indices into lt trends
-cont_lt_trds <- trends_function(cont_idxs, start_year = year_1, 
-                                 end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=continent) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_1, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cont_lt_trds <- trends_function(ind_list = cont_idxs, start_year = year_1, 
+                                 end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = continent) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into medium term trends
-cont_exp_trds <- trends_function(cont_idxs, start_year = year_exp, 
-                                  end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=continent) %>% 
-  mutate(strata_name=stratum,
-         start_year=year_exp, end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cont_exp_trds <- trends_function(ind_list = cont_idxs, start_year = year_exp, 
+                                  end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = continent) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 10 yr trends
-cont_10yr_trds <- trends_function(cont_idxs, start_year = (year_N - 10), 
-                                   end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=continent) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - 10), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cont_10yr_trds <- trends_function(ind_list = cont_idxs, start_year = year_10, 
+                                   end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = continent) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 
 # turn indices into 3 gen trends
-cont_3gen_trds <- trends_function(cont_idxs, start_year = (year_N - gen_3_years), 
-                                   end_year=year_N, quant = 0.95) %>% 
-  rename(stratum=continent) %>% 
-  mutate(strata_name=stratum,
-         start_year=(year_N - gen_3_years), end_year=year_N,
-         sig=ifelse(lci>0 | uci<0, 1, 0),
-         gen_3_years=gen_3_years)
+cont_3gen_trds <- trends_function(ind_list = cont_idxs, start_year = year_3g, 
+                                   end_year = year_N, quant = 0.95) %>% 
+  rename(stratum = continent) %>% 
+  mutate(strata_name = stratum,
+         sig = ifelse(lci>0 | uci<0, 1, 0),
+         gen_3_years = gen_3_years)
 # ------------------------------------------------------------------------------
 
 
