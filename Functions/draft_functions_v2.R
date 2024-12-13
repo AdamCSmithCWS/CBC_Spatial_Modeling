@@ -397,6 +397,7 @@ trends_function <- function(ind_list,
     summarise(trend = mean(t),
               lci = quantile(t, lu, names = FALSE),
               uci = quantile(t, uu, names = FALSE),
+              q0.5 = quantile(t, 0.5),
               q0.05 = quantile(t, 0.05),
               q0.95 = quantile(t, 0.95),
               q0.165 = quantile(t, 0.165),
@@ -448,6 +449,7 @@ trends_function <- function(ind_list,
     summarise(trend = mean(t),
               lci = quantile(t, lu, names = FALSE),
               uci = quantile(t, uu, names = FALSE),
+              q0.5 = quantile(t, 0.5),
               q0.05 = quantile(t, 0.05),
               q0.95 = quantile(t, 0.95),
               q0.165 = quantile(t, 0.165),
@@ -542,7 +544,7 @@ posterior_samples <- function(fit = cmdstanfit,
                               dims = NULL,
                               is_rstan = FALSE,
                               is_mcmc = FALSE){
-  require(posterior)
+  # require(posterior) # not loaded to avoid masking
   require(tidyverse)
   
   if(length(dims) > 0){
@@ -556,13 +558,13 @@ posterior_samples <- function(fit = cmdstanfit,
   if(class(fit)[1] == "mcmc"){is_mcmc <- TRUE}
   
   if(is_rstan | is_mcmc){
-    samples <- as_draws_df(as.array(fit)) %>% 
+    samples <- posterior::as_draws_df(as.array(fit)) %>% 
       dplyr::select(starts_with(parm_ex, ignore.case = FALSE),
                     .chain,
                     .iteration,
                     .draw)
   } else {
-    samples <- as_draws_df(fit$draws(variables = c(parm)))
+    samples <- posterior::as_draws_df(fit$draws(variables = c(parm)))
   }
 
   plong <- suppressWarnings(samples %>% pivot_longer(

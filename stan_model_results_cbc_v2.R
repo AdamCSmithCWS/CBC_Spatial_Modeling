@@ -3,7 +3,7 @@
 
 # setup ------------------------------------------------------------------------
 # library(patchwork)
-library(posterior)
+# library(posterior) # this is called in script but not loaded due to masking
 #library(bayesplot)
 library(patchwork)
 #library(geofacet)
@@ -70,8 +70,8 @@ gen_3_years <- round(gen_years * 3)
 year_1 <- 1966 # first year
 year_exp <- 1993 # year when expanded BBS analyses started
 year_N <- 2019 # last year
-year_10 <- year_N - 10 + 1 # go back eleven years
-year_3g <- year_N - gen_3_years + 1
+year_10 <- year_N - 10 # includes eleven years data, i.e. inclusive
+year_3g <- year_N - gen_3_years
 pif_quant <- c(0.025, 0.05, 0.165, 0.5, 0.835, 0.95, 0.975)
 # ------------------------------------------------------------------------------
 
@@ -81,11 +81,11 @@ pif_quant <- c(0.025, 0.05, 0.165, 0.5, 0.835, 0.95, 0.975)
 # diagnostics ------------------------------------------------------------------
 # abundance indices
 nit_par_diags <- fit$draws() %>% 
-  subset_draws(variable = c("n")) %>% 
-  as_draws_df() %>% 
-  summarise_draws(mean, sd, 
+  posterior::subset_draws(variable = c("n")) %>% 
+  posterior::as_draws_df() %>% 
+  posterior::summarise_draws(mean, sd, 
                   ~quantile(.x, probs = pif_quant),
-                  default_convergence_measures()) %>% 
+                  posterior::default_convergence_measures()) %>% 
   rename_at(vars(c(4:8)), .funs = ~paste0("q", .x)) %>% 
   mutate(stratum = as.numeric(str_split(string = gsub("n|\\[|\\]", "", variable),
                            pattern = ",", simplify = T)[,1]),
@@ -108,20 +108,20 @@ if(nit_ess_test == T){
 
 # effort parameters
 eff_par_diags <- fit$draws() %>% 
-  subset_draws(variable = c("B", "b_raw", "P", "p_raw")) %>% 
-  as_draws_df() %>% 
+  posterior::subset_draws(variable = c("B", "b_raw", "P", "p_raw")) %>% 
+  posterior::as_draws_df() %>% 
   mutate_at(vars(starts_with("b_raw")), .funs = ~ .x + B) %>% 
   mutate_at(vars(starts_with("p_raw")), .funs = ~ .x + P) %>% 
   rename_with(~str_replace(., "b_raw", "B_strat"), starts_with("b_raw")) %>% 
   rename_with(~str_replace(., "p_raw", "P_strat"), starts_with("p_raw")) %>% 
-  as_draws_df() %>% 
-  summarise_draws(mean, sd, 
+  posterior::as_draws_df() %>% 
+  posterior::summarise_draws(mean, sd, 
                   ~quantile(.x, probs = pif_quant)) %>% 
   rename_at(vars(c(4:8)), .funs = ~paste0("q", .x)) %>% 
   bind_cols(fit$draws() %>% 
-              subset_draws(variable = c("B", "b_raw", "P", "p_raw")) %>% 
-              as_draws_df() %>% 
-              summarise_draws(default_convergence_measures()) %>% 
+              posterior::subset_draws(variable = c("B", "b_raw", "P", "p_raw")) %>% 
+              posterior::as_draws_df() %>% 
+              posterior::summarise_draws(posterior::default_convergence_measures()) %>% 
               select(-1)) %>% 
   mutate(stratum = as.numeric(str_extract(string = variable, pattern = "\\d+")),
          year = NA)
@@ -228,6 +228,7 @@ regs <- sort(unique(pd2$bcr))
 pgs <- 1:ceiling(length(regs) / 9)
 
 # loop through plot pages
+dev.off()
 for(pg in 1:length(pgs)){
   stt <- pg
   if(stt == 1) stt <- 1
@@ -258,7 +259,6 @@ for(pg in 1:length(pgs)){
     theme_bw()
   cairo_pdf(fn, width = 11, height = 8.5)
   print(plt_i)
-  dev.off()
   dev.off()
 }
   
@@ -311,7 +311,6 @@ cairo_pdf(paste0("./output/", gsub(" ", "_", species), "_bcr_trend_map.pdf"),
           width = 9.25, height = 10)
 ptch1
 dev.off()
-dev.off()
 # ------------------------------------------------------------------------------
 
 
@@ -342,14 +341,13 @@ ps_idx_lst$indices_smooth <- ps_smooth_idxs$indices_smooth
 ps_idx_lst$samples_smooth <- ps_smooth_idxs$samples_smooth
 
 # plot indices for full time series
-pd1 <- ps_idx_lst$indices_smooth %>% 
-  arrange(prov_state, Year)
-pd2 <- ps_idx_lst$indices %>% 
-  arrange(prov_state, Year)
+pd1 <- ps_idx_lst$indices_smooth %>% arrange(prov_state, Year)
+pd2 <- ps_idx_lst$indices %>% arrange(prov_state, Year)
 regs <- sort(unique(pd2$prov_state))
 pgs <- 1:ceiling(length(regs) / 9)
 
 # loop through plot pages
+dev.off()
 for(pg in 1:length(pgs)){
   stt <- pg
   if(stt == 1) stt <- 1
@@ -380,7 +378,6 @@ for(pg in 1:length(pgs)){
     theme_bw()
   cairo_pdf(fn, width = 11, height = 8.5)
   print(plt_i)
-  dev.off()
   dev.off()
 }
 
@@ -463,10 +460,8 @@ cntry_idx_lst$indices_smooth <- cntry_smooth_idxs$indices_smooth
 cntry_idx_lst$samples_smooth <- cntry_smooth_idxs$samples_smooth
 
 # plot indices for full time series
-pd1 <- cntry_idx_lst$indices_smooth %>% 
-  arrange(country, Year)
-pd2 <- cntry_idx_lst$indices %>% 
-  arrange(country, Year)
+pd1 <- cntry_idx_lst$indices_smooth %>% arrange(country, Year)
+pd2 <- cntry_idx_lst$indices %>% arrange(country, Year)
 cntry_ind_plot <- ggplot() +
   geom_ribbon(data = pd1, 
               aes(x = true_year, ymin = lci, ymax = uci),
@@ -655,8 +650,6 @@ pd2 <- strat_idx_lst$indices %>%
 regs <- sort(unique(pd2$stratum))
 pgs <- 1:ceiling(length(regs) / 9)
 
-# need to add in stratum names #
-
 # loop through plot pages
 for(pg in 1:length(pgs)){
   stt <- pg
@@ -698,7 +691,7 @@ strat_lt_trds <- trends_function(ind_list = strat_idx_lst, start_year = year_1,
   mutate(stratum = as.numeric(stratum)) %>% 
   left_join(strata_map %>% st_drop_geometry() %>% 
               select(stratum, strata_name), by="stratum") %>% 
-  select(stratum=strata_name, trend, lci, uci, 
+  select(stratum=strata_name, trend, lci, uci, q0.5,
          q0.05, q0.95, q0.165, q0.835,
          percent_change, p_ch_lci, 
          p_ch_uci, prob_decline, prob_decline_gt30, prob_decline_gt50,
@@ -714,7 +707,7 @@ strat_exp_trds <- trends_function(ind_list = strat_idx_lst, start_year = year_ex
   mutate(stratum = as.numeric(stratum)) %>% 
   left_join(strata_map %>% st_drop_geometry() %>% 
               select(stratum, strata_name), by="stratum") %>% 
-  select(stratum=strata_name, trend, lci, uci, 
+  select(stratum=strata_name, trend, lci, uci, q0.5,
          q0.05, q0.95, q0.165, q0.835,
          percent_change, p_ch_lci, 
          p_ch_uci, prob_decline, prob_decline_gt30, prob_decline_gt50,
@@ -730,7 +723,7 @@ strat_10yr_trds <- trends_function(ind_list = strat_idx_lst, start_year = year_1
   mutate(stratum = as.numeric(stratum)) %>% 
   left_join(strata_map %>% st_drop_geometry() %>% 
               select(stratum, strata_name), by="stratum") %>% 
-  select(stratum=strata_name, trend, lci, uci, 
+  select(stratum=strata_name, trend, lci, uci, q0.5, 
          q0.05, q0.95, q0.165, q0.835,
          percent_change, p_ch_lci, 
          p_ch_uci, prob_decline, prob_decline_gt30, prob_decline_gt50,
@@ -746,7 +739,7 @@ strat_3gen_trds <- trends_function(ind_list = strat_idx_lst, start_year = year_3
   mutate(stratum = as.numeric(stratum)) %>% 
   left_join(strata_map %>% st_drop_geometry() %>% 
               select(stratum, strata_name), by="stratum") %>% 
-  select(stratum=strata_name, trend, lci, uci, 
+  select(stratum=strata_name, trend, lci, uci, q0.5, 
          q0.05, q0.95, q0.165, q0.835,
          percent_change, p_ch_lci, 
          p_ch_uci, prob_decline, prob_decline_gt30, prob_decline_gt50,
@@ -786,14 +779,17 @@ agg_trends <- rbind(cont_lt_trds, cont_exp_trds, cont_10yr_trds, cont_3gen_trds,
                              ifelse(start_year == year_exp, "medium-term",
                                     ifelse(start_year == year_10, "ten-year",
                                            "three-generation")))) %>% 
-  select(species, length_three_gens=gen_3_years, region_name = strata_name,  
-         region_type, start_year, end_year, trend_type,
-         trend, lci, uci, trend_sig_diff_0=sig, 
-         trend_q0.05 = q0.05, trend_q0.95 = q0.95, trend_q0.165 = q0.165, 
-         trend_q0.835 = q0.835,
-         percent_change, p_ch_lci, p_ch_uci,
+  select(species, region = strata_name, region_type,
+         trend_type, length_3_gens=gen_3_years, 
+         year_start = start_year, year_end = end_year,
+         trend_mean = trend, trend_median = q0.05, 
+         trend_q0.025 = lci, trend_q0.975 = uci, 
+         trend_diff_zero_95 = sig, 
+         trend_q0.05 = q0.05, trend_q0.95 = q0.95, 
+         trend_q0.165 = q0.165, trend_q0.835 = q0.835,
+         percent_change_mean = percent_change, 
+         percent_change_q0.025 = p_ch_lci, percent_change_q0.975 = p_ch_uci,
          prob_decline, prob_decline_gt30, prob_decline_gt50, prob_decline_gt70)
-  
 
 # get all indices and smooth indices
 agg_indices <- rbind(cont_idx_lst$indices %>% rename(region=continent) %>% 
@@ -829,7 +825,17 @@ agg_indices <- rbind(cont_idx_lst$indices %>% rename(region=continent) %>%
                                    select(stratum, strata_name), by="stratum") %>% 
                        rename(region=stratum) %>% 
                        mutate(region = strata_name, index_type = "smooth_first_diff") %>% 
-                       select(-strata_name))
+                       select(-strata_name)) %>% 
+  rename(count_year = Year) %>% 
+  mutate(species = species, 
+         count_number = count_year + year_1 - 1900,
+         year_end = true_year + 1) %>% 
+  select(species, region, region_type, index_type, 
+         count_number, year_start = true_year, year_end = year_end, 
+         index_mean = mean, index_median = median, 
+         index_q0.025 = lci, index_q0.975 = uci, 
+         index_q0.05 = q0.05, index_q0.95 = q0.95, index_q0.165 = q0.165, 
+         index_q0.835 = q0.835)
 
 # save
 write.csv(agg_indices, paste0("./output/", gsub(" ", "_", species), 
@@ -838,8 +844,5 @@ write.csv(agg_indices, paste0("./output/", gsub(" ", "_", species),
 write.csv(agg_trends, paste0("./output/", gsub(" ", "_", species), 
                              "_relative_abundance_trends.csv"),
           na="", row.names=F)
-
-
-# POLISH UP OUTPUT FILES
-
 # ------------------------------------------------------------------------------
+
