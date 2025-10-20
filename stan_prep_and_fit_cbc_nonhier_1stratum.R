@@ -209,7 +209,9 @@ tst
 
 
 effort <- summ %>% filter(grepl("effort_vis[",variable,fixed = TRUE))
-effort$hours <- rep(1:stan_data$neffort_preds,
+effort$hours <- rep(c(seq(from = min(stan_data$hours), 
+                          to = max(stan_data$hours),
+                          length.out = 100)),
                 each = stan_data$nstrata)
 effort$strata_vec <- rep(1:stan_data$nstrata,
                       times = stan_data$neffort_preds)
